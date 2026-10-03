@@ -185,15 +185,20 @@ class TemporalSignTracker:
         return tid
 
     def _update_vehicle_state(self, track: TrackedSign):
-        """Update active vehicle speed limit and hazard states."""
+        # Speed limits (Classes 0-5, 7, 8 and MPH advisory)
         cid = track.classification.class_id
-
-        # Speed limits (Classes 0-5, 7, 8)
+        cname = track.classification.class_name
         speed_map = {
             0: "20 km/h", 1: "30 km/h", 2: "50 km/h", 3: "60 km/h",
             4: "70 km/h", 5: "80 km/h", 7: "100 km/h", 8: "120 km/h"
         }
-        if cid in speed_map and track.hits >= self.min_hits_to_confirm:
+        if ("M.P.H." in cname or "MPH" in cname) and track.hits >= self.min_hits_to_confirm:
+            # Extract speed string e.g. "20 M.P.H."
+            if "(" in cname and ")" in cname:
+                self.current_speed_limit = cname.split("(")[-1].split(")")[0]
+            else:
+                self.current_speed_limit = cname
+        elif cid in speed_map and track.hits >= self.min_hits_to_confirm:
             self.current_speed_limit = speed_map[cid]
         elif cid in (6, 32) and track.hits >= self.min_hits_to_confirm:
             # End of speed limits

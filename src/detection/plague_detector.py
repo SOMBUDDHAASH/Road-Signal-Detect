@@ -113,7 +113,7 @@ class PlagueSecondaryDetector:
 
                 # Cancellation Guard A: Skin / Body
                 skin_ratio = cv2.countNonZero(crop_skin) / float(bw * bh)
-                if skin_ratio > 0.18:
+                if skin_ratio > 0.15:
                     continue  # Abort: human body / face
 
                 # Cancellation Guard B: Forbidden Colors
@@ -127,7 +127,7 @@ class PlagueSecondaryDetector:
 
                 # Cancellation Guard C: Solidity / Hollow Sprawl
                 solidity = area / float(bw * bh)
-                if solidity < 0.30:
+                if solidity < 0.35:
                     continue  # Abort: sprawling line / road pavement marking
 
                 # Check color balance: both colors must be meaningfully present in the infected zone

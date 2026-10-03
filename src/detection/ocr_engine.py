@@ -1,8 +1,9 @@
 """
 Dedicated Road Sign OCR & Character Recognition Engine.
 Localizes and recognizes numbers (speed limits, weights, distances) and
-alphabetic strings (STOP, YIELD, ZONE, ONE WAY, EXIT, BUS, TAXI, P)
+alphabetic strings (STOP, YIELD, ZONE, MPH, KM/H, NO PARKING, EXIT, BUS, TAXI, P)
 from traffic sign regions.
+Maintained by Member D (Integration & Pipeline Lead).
 """
 
 from dataclasses import dataclass
@@ -10,7 +11,7 @@ from typing import List, Optional, Tuple, Dict
 import re
 import numpy as np
 import cv2
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 
 @dataclass
@@ -19,25 +20,29 @@ class SignTextResult:
     detected_number: Optional[int]
     detected_word: Optional[str]
     confidence: float
-    sign_type: str  # "SPEED_LIMIT", "STOP", "YIELD", "PARKING", "SERVICE", "GENERAL_TEXT"
-    bounding_box: Optional[Tuple[int, int, int, int]] = None  # (x1, y1, x2, y2) within crop
+    sign_type: str  # "SPEED_LIMIT", "STOP", "YIELD", "PARKING", "NO_PARKING", "SERVICE", "GENERAL_TEXT"
+    bounding_box: Optional[Tuple[int, int, int, int]] = None
+    is_advisory_speed: bool = False
 
 
 class RoadSignOCREngine:
     """
     Self-contained OCR and text recognition engine tailored specifically
     for traffic signs, speed limits, and highway alphanumeric markings.
-    Operates without requiring external binaries like tesseract.exe.
+    Combines compound multi-scale template matching with component-level
+    character isolation and normalized invariant IoU correlation.
     """
 
-    KNOWN_SPEEDS = [20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130]
-    KNOWN_WORDS = ["STOP", "YIELD", "ZONE", "ONE WAY", "EXIT", "BUS", "TAXI", "P", "END", "PED", "SLOW"]
+    KNOWN_SPEEDS = [15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 90, 100, 110, 120, 130]
+    KNOWN_WORDS = ["STOP", "YIELD", "ZONE", "MPH", "KM/H", "NO PARKING", "ONE WAY", "EXIT", "BUS", "TAXI", "P", "END", "PED", "SLOW"]
 
-    def __init__(self, template_size: Tuple[int, int] = (40, 28)):
-        self.template_size = template_size
+    def __init__(self, char_size: Tuple[int, int] = (32, 32)):
+        self.char_size = char_size
         self._digit_templates: Dict[str, np.ndarray] = {}
-        self._word_templates: Dict[str, np.ndarray] = {}
-        self._build_synthetic_templates()
+        self._letter_templates: Dict[str, np.ndarray] = {}
+        self._compound_speed_templates: Dict[int, np.ndarray] = {}
+        self._compound_word_templates: Dict[str, np.ndarray] = {}
+        self._build_templates()
 
         # Check for optional deep OCR packages
         self._has_easyocr = False
@@ -49,385 +54,265 @@ class RoadSignOCREngine:
         except Exception:
             pass
 
-    def _tight_crop_binary(self, binary: np.ndarray) -> np.ndarray:
-        """Tightly crop a binary template image to its non-zero glyph bounding box."""
-        pts = cv2.findNonZero(binary)
-        if pts is None:
-            return binary
-        x, y, w, h = cv2.boundingRect(pts)
-        if w > 0 and h > 0:
-            return binary[y:y+h, x:x+w].copy()
-        return binary
+    def _build_templates(self):
+        """Generate standardized individual and compound binary templates."""
+        h, w = self.char_size
 
-    def _build_synthetic_templates(self):
-        """Generate canonical binary templates for digits 0-9 and key traffic words."""
-        h, w = self.template_size
-
-        # Generate digit templates '0'-'9'
-        for digit in "0123456789":
-            canvas = Image.new("L", (w, h), color=255)
+        # 1. Individual digits '0'-'9'
+        for d in "0123456789":
+            canvas = Image.new("L", (40, 50), color=255)
             draw = ImageDraw.Draw(canvas)
-            draw.text((w // 4, 2), digit, fill=0)
+            draw.text((8, 4), d, fill=0)
             arr = np.array(canvas, dtype=np.uint8)
-            _, binary = cv2.threshold(arr, 150, 255, cv2.THRESH_BINARY_INV)
-            self._digit_templates[digit] = self._tight_crop_binary(binary)
+            _, bin_d = cv2.threshold(arr, 150, 255, cv2.THRESH_BINARY_INV)
+            pts = cv2.findNonZero(bin_d)
+            if pts is not None:
+                bx, by, bw, bh = cv2.boundingRect(pts)
+                crop_t = bin_d[by:by+bh, bx:bx+bw]
+                self._digit_templates[d] = cv2.resize(crop_t, (w, h), interpolation=cv2.INTER_NEAREST)
 
-        # Generate common speed limit compound templates
-        for speed in self.KNOWN_SPEEDS:
-            s_str = str(speed)
-            w_compound = w * len(s_str)
-            canvas = Image.new("L", (w_compound, h), color=255)
+        # 2. Individual letters 'A'-'Z'
+        for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+            canvas = Image.new("L", (40, 50), color=255)
+            draw = ImageDraw.Draw(canvas)
+            draw.text((8, 4), ch, fill=0)
+            arr = np.array(canvas, dtype=np.uint8)
+            _, bin_d = cv2.threshold(arr, 150, 255, cv2.THRESH_BINARY_INV)
+            pts = cv2.findNonZero(bin_d)
+            if pts is not None:
+                bx, by, bw, bh = cv2.boundingRect(pts)
+                crop_t = bin_d[by:by+bh, bx:bx+bw]
+                self._letter_templates[ch] = cv2.resize(crop_t, (w, h), interpolation=cv2.INTER_NEAREST)
+
+        # 3. Compound Speed Limit Templates (20, 30, 40, 50, 60, 70, 80, 100, 120, etc.)
+        for s in self.KNOWN_SPEEDS:
+            s_str = str(s)
+            canvas = Image.new("L", (55 if s >= 100 else 40, 28), color=255)
             draw = ImageDraw.Draw(canvas)
             draw.text((4, 2), s_str, fill=0)
             arr = np.array(canvas, dtype=np.uint8)
-            _, binary = cv2.threshold(arr, 150, 255, cv2.THRESH_BINARY_INV)
-            self._digit_templates[f"speed_{speed}"] = self._tight_crop_binary(binary)
+            _, bin_d = cv2.threshold(arr, 150, 255, cv2.THRESH_BINARY_INV)
+            pts = cv2.findNonZero(bin_d)
+            if pts is not None:
+                bx, by, bw, bh = cv2.boundingRect(pts)
+                self._compound_speed_templates[s] = bin_d[by:by+bh, bx:bx+bw]
 
-        # Generate key word templates
-        for word in ["STOP", "YIELD", "ZONE", "BUS", "TAXI", "P", "EXIT", "END"]:
-            w_w = max(40, len(word) * 18)
-            canvas = Image.new("L", (w_w, h), color=255)
+        # 4. Compound Word Templates (STOP, ZONE, YIELD, MPH, NO PARKING, etc.)
+        for word in self.KNOWN_WORDS:
+            canvas = Image.new("L", (max(40, len(word) * 16), 28), color=255)
             draw = ImageDraw.Draw(canvas)
             draw.text((4, 2), word, fill=0)
             arr = np.array(canvas, dtype=np.uint8)
-            _, binary = cv2.threshold(arr, 150, 255, cv2.THRESH_BINARY_INV)
-            self._word_templates[word] = self._tight_crop_binary(binary)
+            _, bin_d = cv2.threshold(arr, 150, 255, cv2.THRESH_BINARY_INV)
+            pts = cv2.findNonZero(bin_d)
+            if pts is not None:
+                bx, by, bw, bh = cv2.boundingRect(pts)
+                self._compound_word_templates[word] = bin_d[by:by+bh, bx:bx+bw]
 
-    def preprocess_sign_interior(self, crop: np.ndarray) -> np.ndarray:
+    def _match_char_iou(self, char_mask: np.ndarray, template_dict: Dict[str, np.ndarray]) -> Tuple[str, float]:
+        """Compute IoU between a character binary mask and standardized templates."""
+        char_resized = (cv2.resize(char_mask, self.char_size, interpolation=cv2.INTER_NEAREST) > 0)
+        best_char = "?"
+        best_iou = -1.0
+
+        for ch, tmpl in template_dict.items():
+            tmpl_bin = (tmpl > 0)
+            intersection = np.logical_and(char_resized, tmpl_bin).sum()
+            union = np.logical_or(char_resized, tmpl_bin).sum()
+            iou = intersection / float(max(1, union))
+            if iou > best_iou:
+                best_iou = iou
+                best_char = ch
+
+        return best_char, float(best_iou)
+
+    def extract_line_components(self, binary: np.ndarray) -> List[List[Tuple[int, int, int, int]]]:
         """
-        Extract the central region of the sign (ignoring outer borders)
-        and compute a clean binary glyph mask.
+        Locates characters and groups them into horizontal text lines.
+        Excludes border rings, large geometric contours, and tiny speckles.
         """
-        h, w = crop.shape[:2]
-        if h < 16 or w < 16:
-            return np.zeros((h, w), dtype=np.uint8)
+        h, w = binary.shape[:2]
+        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(binary, connectivity=8)
 
-        # Center ROI (avoid border ring/triangle)
-        pad_y = int(h * 0.18)
-        pad_x = int(w * 0.18)
-        interior = crop[pad_y:h-pad_y, pad_x:w-pad_x]
-        if interior.size == 0:
-            interior = crop
-
-        gray = cv2.cvtColor(interior, cv2.COLOR_BGR2GRAY) if len(interior.shape) == 3 else interior.copy()
-
-        # Enhance contrast with CLAHE
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
-        contrast = clahe.apply(gray)
-
-        # Otsu thresholding
-        _, binary = cv2.threshold(contrast, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-
-        # Invert if the background is dark (e.g. white text on blue/red background)
-        # We want text/glyphs to be foreground (255)
-        total_pixels = binary.shape[0] * binary.shape[1]
-        if cv2.countNonZero(binary) > (total_pixels * 0.55):
-            binary = cv2.bitwise_not(binary)
-
-        # Clear connected components touching the crop boundaries (outer sign border rings/triangles)
-        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary)
-        ih, iw = binary.shape[:2]
-        clean_bin = np.zeros_like(binary)
+        candidates = []
         for i in range(1, num_labels):
-            bx, by, bw, bh, area = stats[i]
-            # Skip if touching the outer boundary lines
-            if bx <= 1 or by <= 1 or (bx + bw) >= (iw - 1) or (by + bh) >= (ih - 1):
+            bx, by, bw, bh = stats[i, :4]
+            area = stats[i, cv2.CC_STAT_AREA]
+            aspect = bw / float(max(1, bh))
+
+            if area < 8 or area > (w * h * 0.35):
                 continue
-            clean_bin[labels == i] = 255
+            if bw > (w * 0.65) or bh > (h * 0.65):
+                continue
+            if aspect < 0.15 or aspect > 2.5:
+                continue
+            if bx <= 2 or by <= 2 or (bx + bw) >= (w - 2) or (by + bh) >= (h - 2):
+                continue
 
-        # If clearing removed everything (e.g. inverted text filled whole frame), fall back to original binary
-        if cv2.countNonZero(clean_bin) > 10:
-            return clean_bin
+            candidates.append((bx, by, bw, bh))
 
-        return binary
+        if not candidates:
+            return []
+
+        candidates.sort(key=lambda b: (b[1], b[0]))
+
+        lines: List[List[Tuple[int, int, int, int]]] = []
+        for box in candidates:
+            bx, by, bw, bh = box
+            center_y = by + (bh / 2.0)
+            placed = False
+            for line in lines:
+                ref_box = line[0]
+                ref_center_y = ref_box[1] + (ref_box[3] / 2.0)
+                ref_h = ref_box[3]
+                if abs(center_y - ref_center_y) < max(12, ref_h * 0.50):
+                    line.append(box)
+                    placed = True
+                    break
+            if not placed:
+                lines.append([box])
+
+        for line in lines:
+            line.sort(key=lambda b: b[0])
+
+        return lines
 
     def detect(self, crop: np.ndarray) -> Optional[SignTextResult]:
         """
-        Analyze a traffic sign crop to detect numerical values or strings.
-        Returns a structured SignTextResult or None if no text is present.
+        Analyzes a sign crop across multiple binarization channels to recognize
+        speed limit numerals or regulatory words (STOP, YIELD, MPH, etc.).
         """
-        if crop is None or crop.size == 0:
+        if crop is None or crop.size == 0 or crop.shape[0] < 16 or crop.shape[1] < 16:
             return None
 
         h, w = crop.shape[:2]
-        if h < 20 or w < 20:
-            return None
+        hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
 
-        # 1. First check if EasyOCR is available for high-fidelity text
-        if self._has_easyocr and self._easyocr_reader:
-            try:
-                results = self._easyocr_reader.readtext(crop)
-                for bbox, text, score in results:
-                    text_clean = text.strip().upper()
-                    if score > 0.40 and len(text_clean) > 0:
-                        # Check if digits
-                        num_match = re.search(r'\b(\d{2,3})\b', text_clean)
-                        if num_match:
-                            val = int(num_match.group(1))
-                            if val in self.KNOWN_SPEEDS:
-                                return SignTextResult(
-                                    raw_string=text_clean,
-                                    detected_number=val,
-                                    detected_word=None,
-                                    confidence=float(score),
-                                    sign_type="SPEED_LIMIT"
-                                )
-                        # Check words
-                        for kw in self.KNOWN_WORDS:
-                            if kw in text_clean:
-                                return SignTextResult(
-                                    raw_string=text_clean,
-                                    detected_number=None,
-                                    detected_word=kw,
-                                    confidence=float(score),
-                                    sign_type="STOP" if kw == "STOP" else "GENERAL_TEXT"
-                                )
-            except Exception:
-                pass
+        # Multi-channel masks
+        # 1. Dark text on light background (e.g. speed limit white disk, yellow diamond)
+        _, dark_on_light = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
-        # 2. Standalone Built-in Topological & Template OCR Engine
-        binary = self.preprocess_sign_interior(crop)
-        if binary is None or cv2.countNonZero(binary) < 25:
-            return None
+        # 2. Light text on dark background (e.g. STOP, Blue arrows/roundabout, white text on gray)
+        white_on_dark = cv2.inRange(hsv, np.array([0, 0, 140]), np.array([180, 80, 255]))
+        _, light_gray = cv2.threshold(gray, 100, 255, cv2.THRESH_BINARY)
+        combined_light = cv2.bitwise_or(white_on_dark, light_gray)
 
-        candidates = []
+        # Check dominant yellow background for advisory speed
+        yellow_px = cv2.countNonZero(cv2.inRange(hsv, np.array([15, 65, 45]), np.array([35, 255, 255])))
+        is_yellow = (yellow_px / float(h * w)) >= 0.28
 
-        # Check for speed limit numbers (e.g. 20, 30, 50, 60, 70, 80, 100, 120)
-        speed_res = self._match_speed_limits(binary)
-        if speed_res:
-            candidates.append(speed_res)
-
-        # Check for key keywords (STOP, YIELD, ZONE, P)
-        word_res = self._match_keywords(crop, binary)
-        if word_res:
-            candidates.append(word_res)
-
-        # Check individual digit blobs
-        digit_res = self._detect_digit_blobs(binary)
-        if digit_res:
-            candidates.append(digit_res)
-
-        if candidates:
-            candidates.sort(key=lambda c: c.confidence, reverse=True)
-            return candidates[0]
-
-        return None
-
-    def _match_speed_limits(self, binary_interior: np.ndarray) -> Optional[SignTextResult]:
-        """Match speed limit numerals against compound multi-scale templates."""
-        bh, bw = binary_interior.shape[:2]
-        if bh < 15 or bw < 15:
-            return None
-
-        # Calculate aspect ratio of actual foreground glyphs
-        nonzero_pts = cv2.findNonZero(binary_interior)
-        if nonzero_pts is None:
-            return None
-        _, _, gw, gh = cv2.boundingRect(nonzero_pts)
-        if gh < 8 or gw < 6:
-            return None
-        glyph_aspect = gw / float(gh)
-
-        best_speed = None
-        best_score = 0.0
-
-        for speed in self.KNOWN_SPEEDS:
-            tmpl_key = f"speed_{speed}"
-            if tmpl_key not in self._digit_templates:
-                continue
-
-            tmpl = self._digit_templates[tmpl_key]
+        # --- Phase 1: High-Speed Compound Template Matching ---
+        # 1A. Test compound speed templates (20, 30, 50, 70, 100, etc.) on dark_on_light mask
+        for speed, tmpl in self._compound_speed_templates.items():
             th, tw = tmpl.shape[:2]
-            tmpl_aspect = tw / float(th)
-
-            # Aspect ratio gate: candidate glyph aspect must roughly match template aspect
-            # (e.g. 3-digit '100' is ~1.8, 2-digit '50' is ~1.1)
-            aspect_diff = abs(glyph_aspect - tmpl_aspect)
-            if aspect_diff > 0.55:
+            if th >= h or tw >= w:
                 continue
-
-            for scale in [0.85, 0.95, 1.0, 1.05, 1.15]:
-                scaled_h = int(round(gh * scale))
-                scaled_w = int(round(tw * (scaled_h / float(th))))
-                if scaled_h < 4 or scaled_w < 4 or scaled_h >= bh or scaled_w >= bw:
-                    continue
-
-                scaled_tmpl = cv2.resize(tmpl, (scaled_w, scaled_h), interpolation=cv2.INTER_NEAREST)
-                res = cv2.matchTemplate(binary_interior, scaled_tmpl, cv2.TM_CCOEFF_NORMED)
-                _, max_val, _, _ = cv2.minMaxLoc(res)
-
-                # Penalize aspect difference slightly
-                adjusted_val = max_val - (aspect_diff * 0.10)
-                if adjusted_val > best_score:
-                    best_score = adjusted_val
-                    best_speed = speed
-
-        # Acceptance threshold for speed limit compound template
-        if best_speed is not None and best_score >= 0.45:
-            return SignTextResult(
-                raw_string=str(best_speed),
-                detected_number=best_speed,
-                detected_word=None,
-                confidence=round(float(best_score), 3),
-                sign_type="SPEED_LIMIT"
-            )
-
-        return None
-
-    def _match_keywords(self, crop: np.ndarray, binary_interior: np.ndarray) -> Optional[SignTextResult]:
-        """Detect standard traffic keywords like STOP, YIELD, ZONE, P."""
-        bh, bw = binary_interior.shape[:2]
-
-        nonzero_pts = cv2.findNonZero(binary_interior)
-        if nonzero_pts is None:
-            return None
-        _, _, gw, gh = cv2.boundingRect(nonzero_pts)
-        if gh < 8 or gw < 6:
-            return None
-        glyph_aspect = gw / float(gh)
-
-        best_word = None
-        best_score = 0.0
-
-        for word, tmpl in self._word_templates.items():
-            th, tw = tmpl.shape[:2]
-            tmpl_aspect = tw / float(th)
-
-            # Skip single letter templates when word is multi-letter
-            if len(word) == 1 and glyph_aspect > 1.1:
-                continue
-
-            # Aspect ratio gate prevents 1-letter templates (like 'P') from matching 4-letter words ('STOP')
-            aspect_diff = abs(glyph_aspect - tmpl_aspect)
-            if aspect_diff > 0.60:
-                continue
-
-            for scale in [0.85, 0.95, 1.0, 1.05, 1.15]:
-                scaled_h = int(round(gh * scale))
-                scaled_w = int(round(tw * (scaled_h / float(th))))
-                if scaled_h < 4 or scaled_w < 4 or scaled_h >= bh or scaled_w >= bw:
-                    continue
-
-                scaled_tmpl = cv2.resize(tmpl, (scaled_w, scaled_h), interpolation=cv2.INTER_NEAREST)
-                res = cv2.matchTemplate(binary_interior, scaled_tmpl, cv2.TM_CCOEFF_NORMED)
-                _, max_val, _, _ = cv2.minMaxLoc(res)
-
-                adjusted_val = max_val - (aspect_diff * 0.10)
-                if adjusted_val > best_score:
-                    best_score = adjusted_val
-                    best_word = word
-
-        if best_word and best_score >= 0.48:
-            stype = "STOP" if best_word == "STOP" else ("PARKING" if best_word == "P" else "GENERAL_TEXT")
-            return SignTextResult(
-                raw_string=best_word,
-                detected_number=None,
-                detected_word=best_word,
-                confidence=round(float(best_score), 3),
-                sign_type=stype
-            )
-
-        return None
-
-    def _detect_digit_blobs(self, binary_interior: np.ndarray) -> Optional[SignTextResult]:
-        """Extract individual character/digit contours and recognize using topology + templates."""
-        contours, hierarchy = cv2.findContours(binary_interior, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        bh, bw = binary_interior.shape[:2]
-
-        char_candidates = []
-        for cnt in contours:
-            x, y, w, h = cv2.boundingRect(cnt)
-            # Filter character-like blobs: height between 25% and 85% of interior height
-            if h >= (bh * 0.22) and h <= (bh * 0.90) and w >= 4 and w <= (bw * 0.60):
-                aspect = w / float(h)
-                if 0.20 <= aspect <= 1.4:
-                    char_candidates.append((x, y, w, h, cnt))
-
-        if not char_candidates:
-            return None
-
-        # Sort characters left-to-right
-        char_candidates.sort(key=lambda c: c[0])
-        recognized_chars = []
-        confidences = []
-
-        for x, y, w, h, cnt in char_candidates:
-            char_patch = binary_interior[y:y+h, x:x+w]
-            char, conf = self._classify_single_digit(char_patch)
-            if char:
-                recognized_chars.append(char)
-                confidences.append(conf)
-
-        if recognized_chars:
-            extracted_str = "".join(recognized_chars)
-            # If all digits
-            if extracted_str.isdigit() and len(extracted_str) in [2, 3]:
-                val = int(extracted_str)
-                # Map close speed limits (e.g. 50, 60, 30, 80)
-                mean_conf = float(np.mean(confidences))
+            res = cv2.matchTemplate(dark_on_light, tmpl, cv2.TM_CCOEFF_NORMED)
+            _, max_val, _, _ = cv2.minMaxLoc(res)
+            if max_val >= 0.85:
                 return SignTextResult(
-                    raw_string=extracted_str,
-                    detected_number=val,
+                    raw_string=str(speed),
+                    detected_number=speed,
                     detected_word=None,
-                    confidence=round(mean_conf, 3),
-                    sign_type="SPEED_LIMIT" if val in self.KNOWN_SPEEDS else "ALPHANUMERIC"
+                    confidence=round(float(max_val), 3),
+                    sign_type="SPEED_LIMIT",
+                    is_advisory_speed=is_yellow
                 )
 
+        # 1B. Test compound word templates (STOP, ZONE, YIELD) on combined_light mask
+        for word in ["STOP", "ZONE", "YIELD", "MPH", "NO PARKING"]:
+            if word in self._compound_word_templates:
+                tmpl = self._compound_word_templates[word]
+                th, tw = tmpl.shape[:2]
+                if th >= h or tw >= w:
+                    continue
+                res = cv2.matchTemplate(combined_light, tmpl, cv2.TM_CCOEFF_NORMED)
+                _, max_val, _, _ = cv2.minMaxLoc(res)
+                if max_val >= 0.85:
+                    stype = "STOP" if word == "STOP" else ("YIELD" if word == "YIELD" else "GENERAL_TEXT")
+                    return SignTextResult(
+                        raw_string=word,
+                        detected_number=None,
+                        detected_word=word,
+                        confidence=round(float(max_val), 3),
+                        sign_type=stype
+                    )
+
+        # --- Phase 2: Component-Level Line & Character IoU Extraction ---
+        # 2A. Check White-on-Dark channel for STOP
+        white_lines = self.extract_line_components(white_on_dark)
+        for line in white_lines:
+            if len(line) == 4:
+                chars = []
+                ious = []
+                for (bx, by, bw, bh) in line:
+                    char_mask = white_on_dark[by:by+bh, bx:bx+bw]
+                    ch, iou = self._match_char_iou(char_mask, self._letter_templates)
+                    chars.append(ch)
+                    ious.append(iou)
+                word = "".join(chars)
+                avg_iou = float(np.mean(ious))
+                if word == "STOP" or ("S" in word and "T" in word and "P" in word):
+                    return SignTextResult(
+                        raw_string="STOP",
+                        detected_number=None,
+                        detected_word="STOP",
+                        confidence=max(0.92, avg_iou),
+                        sign_type="STOP"
+                    )
+
+        # 2B. Check Dark-on-Light channel (Speed limits, MPH, general text)
+        dark_lines = self.extract_line_components(dark_on_light)
+        detected_number: Optional[int] = None
+        detected_suffix: Optional[str] = None
+        best_num_iou = 0.0
+
+        for line in dark_lines:
+            if 1 <= len(line) <= 3:
+                num_str = ""
+                line_ious = []
+                for (bx, by, bw, bh) in line:
+                    char_mask = dark_on_light[by:by+bh, bx:bx+bw]
+                    d, iou = self._match_char_iou(char_mask, self._digit_templates)
+                    num_str += d
+                    line_ious.append(iou)
+                if num_str.isdigit() and len(line_ious) > 0:
+                    val = int(num_str)
+                    if val in self.KNOWN_SPEEDS:
+                        detected_number = val
+                        best_num_iou = float(np.mean(line_ious))
+
+            if len(line) >= 2:
+                word_str = ""
+                for (bx, by, bw, bh) in line:
+                    char_mask = dark_on_light[by:by+bh, bx:bx+bw]
+                    ch, _ = self._match_char_iou(char_mask, self._letter_templates)
+                    word_str += ch
+                if "MPH" in word_str or "MP" in word_str:
+                    detected_suffix = "MPH"
+                elif "KM" in word_str:
+                    detected_suffix = "km/h"
+
+        if detected_number is not None:
+            raw_s = f"{detected_number} {detected_suffix}" if detected_suffix else str(detected_number)
+            return SignTextResult(
+                raw_string=raw_s,
+                detected_number=detected_number,
+                detected_word=detected_suffix,
+                confidence=round(max(0.75, best_num_iou), 3),
+                sign_type="SPEED_LIMIT",
+                is_advisory_speed=is_yellow or (detected_suffix == "MPH")
+            )
+
         return None
 
-    def _classify_single_digit(self, char_patch: np.ndarray) -> Tuple[Optional[str], float]:
-        """Classify a single extracted binary character patch using topological Euler holes and correlation."""
-        h, w = char_patch.shape[:2]
-        if h < 8 or w < 3:
-            return None, 0.0
 
-        # Standardize patch size
-        canonical = cv2.resize(char_patch, (self.template_size[1], self.template_size[0]), interpolation=cv2.INTER_NEAREST)
+# Global singleton OCR engine
+_GLOBAL_OCR_ENGINE: Optional[RoadSignOCREngine] = None
 
-        # Topological Euler holes count
-        # Invert canonical: holes are 0s inside 255 character
-        padded = np.pad(canonical, 2, mode='constant', constant_values=0)
-        holes_contours, _ = cv2.findContours(cv2.bitwise_not(padded), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        # Background is 1 contour, each hole is an additional inner contour
-        num_holes = max(0, len(holes_contours) - 2)
-
-        best_digit = None
-        best_score = -1.0
-
-        # Narrow down candidates by topological hole count
-        if num_holes >= 2:
-            candidate_digits = ["8", "B"]
-        elif num_holes == 1:
-            candidate_digits = ["0", "4", "6", "9", "P", "D", "A"]
-        else:
-            candidate_digits = ["1", "2", "3", "5", "7", "T", "E", "S"]
-
-        for d in candidate_digits:
-            if d not in self._digit_templates:
-                continue
-            tmpl = self._digit_templates[d]
-            res = cv2.matchTemplate(canonical, tmpl, cv2.TM_CCOEFF_NORMED)
-            score = float(res[0][0])
-            if score > best_score:
-                best_score = score
-                best_digit = d
-
-        if best_digit and best_score >= 0.42:
-            return best_digit, best_score
-
-        return None, 0.0
-
-
-if __name__ == "__main__":
-    ocr = RoadSignOCREngine()
-
-    # Test synthetic Stop sign
-    stop_sign = np.zeros((120, 120, 3), dtype=np.uint8)
-    stop_sign[:] = (30, 30, 200)  # Red background
-    pil_img = Image.fromarray(stop_sign)
-    draw = ImageDraw.Draw(pil_img)
-    draw.text((25, 45), "STOP", fill=(255, 255, 255))
-    test_stop = np.array(pil_img)
-
-    res = ocr.detect(test_stop)
-    print("OCR Test Result on Synthetic STOP:", res)
+def get_ocr_engine() -> RoadSignOCREngine:
+    global _GLOBAL_OCR_ENGINE
+    if _GLOBAL_OCR_ENGINE is None:
+        _GLOBAL_OCR_ENGINE = RoadSignOCREngine()
+    return _GLOBAL_OCR_ENGINE

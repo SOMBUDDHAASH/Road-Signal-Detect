@@ -156,12 +156,44 @@ class TrafficSignPipeline:
         if valid_crops:
             # Batch classification if supported, else sequential
             cls_results: List[ClassificationResult] = self.classifier.classify_batch(valid_crops)
+            from src.detection.ocr_engine import get_ocr_engine
+            from src.classification.semantic_verifier import get_semantic_verifier
+            ocr_engine = get_ocr_engine()
+            verifier = get_semantic_verifier()
+
             for det, cls_res, crop in zip(valid_detections, cls_results, valid_crops):
-                # Smart Fusion: If detector already identified a specific sign class with high confidence
+                # 1. Run character & numeral OCR on crop
+                ocr_res = ocr_engine.detect(crop)
+
+                # 2. Semantic & Physical Consistency Verification
+                verified = verifier.verify_and_correct(
+                    crop=crop,
+                    raw_class_id=cls_res.class_id,
+                    raw_confidence=cls_res.confidence,
+                    raw_probs=getattr(cls_res, "probs", None),
+                    ocr_text=ocr_res.raw_string if ocr_res else None,
+                    ocr_number=ocr_res.detected_number if ocr_res else None,
+                    ocr_word=ocr_res.detected_word if ocr_res else None
+                )
+                if verified is not None:
+                    cls_res = verified
+                elif cls_res.class_id < 0:
+                    continue
+
+                # 3. Smart Fusion: If detector already identified a specific sign class with high confidence
                 # and classifier is lower confidence or unclassified, trust detector!
-                if det.detector_label in YOLO_LABEL_TO_GTSRB and det.confidence >= 0.35:
+                if det.detector_label in YOLO_LABEL_TO_GTSRB and det.confidence >= 0.40:
                     yolo_cid, yolo_name, yolo_cat = YOLO_LABEL_TO_GTSRB[det.detector_label]
-                    if cls_res.class_id < 0 or (cls_res.class_id != yolo_cid and cls_res.confidence < det.confidence):
+                    # If YOLO predicted a speed limit but OCR found NO digits and confidence is moderate,
+                    # avoid false speed limit assignment on symbol prohibitory signs
+                    if yolo_name.startswith("Speed limit") and (ocr_res is None or ocr_res.detected_number is None) and det.confidence < 0.72:
+                        cls_res = ClassificationResult(
+                            class_id=15,
+                            class_name="No vehicles / Motorcycles prohibited",
+                            confidence=0.85,
+                            category=SignCategory.PROHIBITORY
+                        )
+                    elif cls_res.class_id < 0 or (cls_res.class_id != yolo_cid and cls_res.confidence < det.confidence):
                         cls_res = ClassificationResult(
                             class_id=yolo_cid,
                             class_name=yolo_name,
@@ -208,9 +240,15 @@ class TrafficSignPipeline:
             }
             for d in pipeline_detections:
                 cid = d.classification.class_id
-                if cid in speed_map and not speed_limit:
+                cname = d.classification.class_name
+                if "M.P.H." in cname or "MPH" in cname:
+                    if "(" in cname and ")" in cname:
+                        speed_limit = cname.split("(")[-1].split(")")[0]
+                    else:
+                        speed_limit = cname
+                elif cid in speed_map and not speed_limit:
                     speed_limit = speed_map[cid]
-                if d.classification.category == SignCategory.DANGER and not hazard:
+                if d.classification.category == SignCategory.DANGER and not hazard and d.classification.confidence >= 0.55:
                     hazard = d.classification.class_name
 
         # Stage 5: Performance Telemetry & HUD Visualization
