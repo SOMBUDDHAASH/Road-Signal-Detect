@@ -94,6 +94,33 @@ class BenchmarkDataLoader:
                     continue
 
     def get_ground_truth(self, filename: str) -> Optional[GroundTruthSign]:
-        """Look up ground truth for a test sample like '00000.png'."""
+        """Look up ground truth for a test sample like '00000.png' or 'class_14_sample_1.png'."""
         base = os.path.basename(filename)
-        return self.ground_truth_map.get(base)
+        if base in self.ground_truth_map:
+            return self.ground_truth_map[base]
+
+        # Support named samples: class_XX_sample_Y.png
+        if base.startswith("class_") and "_sample_" in base:
+            try:
+                parts = base.split("_")
+                cid = int(parts[1])
+                if 0 <= cid < 43:
+                    meta = self.meta_info.get(cid, {})
+                    return GroundTruthSign(
+                        filename=base,
+                        width=32,
+                        height=32,
+                        roi_x1=0,
+                        roi_y1=0,
+                        roi_x2=32,
+                        roi_y2=32,
+                        class_id=cid,
+                        class_name=get_class_name(cid),
+                        category=get_sign_category(cid).value,
+                        shape_id=meta.get("shape_id"),
+                        color_id=meta.get("color_id")
+                    )
+            except (ValueError, IndexError):
+                pass
+
+        return None
