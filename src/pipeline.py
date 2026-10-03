@@ -40,12 +40,14 @@ YOLO_LABEL_TO_GTSRB: Dict[str, Tuple[int, str, SignCategory]] = {
 
 
 from src.tracking.tracker import TemporalSignTracker
+from src.detection.plague_detector import PlagueSecondaryDetector
 
 
 class TrafficSignPipeline:
     """
     Master pipeline integrating Member B's detector and Member C's classifier.
-    Supports continuous temporal tracking, bounding box smoothing, and vehicle HUD state.
+    Supports continuous temporal tracking, bounding box smoothing, vehicle HUD state,
+    and a secondary 'Plague' color-pair cellular automaton + OCR fallback detector.
     """
 
     def __init__(
@@ -55,7 +57,8 @@ class TrafficSignPipeline:
         visualizer: Optional[Visualizer] = None,
         crop_padding_ratio: float = 0.05,
         default_conf_threshold: float = 0.50,
-        enable_tracking: bool = True
+        enable_tracking: bool = True,
+        enable_secondary_fallback: bool = True
     ):
         self.detector = detector
         self.classifier = classifier
@@ -64,6 +67,8 @@ class TrafficSignPipeline:
         self.default_conf_threshold = default_conf_threshold
         self.enable_tracking = enable_tracking
         self.tracker = TemporalSignTracker() if enable_tracking else None
+        self.enable_secondary_fallback = enable_secondary_fallback
+        self.secondary_detector = PlagueSecondaryDetector(enable_ocr=True) if enable_secondary_fallback else None
 
         # Smoothing for FPS
         self._prev_frame_time = time.perf_counter()
@@ -172,6 +177,21 @@ class TrafficSignPipeline:
                         crop=crop
                     ))
         cls_latency_ms = (time.perf_counter() - t_cls_start) * 1000.0
+
+        # Stage 3.5: Secondary Plague Detector & OCR Fallback
+        # Triggered when primary detector + classifier returned 0 verified signs
+        if not pipeline_detections and self.enable_secondary_fallback and self.secondary_detector:
+            t_sec_start = time.perf_counter()
+            secondary_pairs = self.secondary_detector.detect(frame, conf_threshold=conf_threshold)
+            for s_det, s_cls in secondary_pairs:
+                sx1, sy1, sx2, sy2 = s_det.bbox.clamp(w, h).to_xyxy()
+                s_crop = frame[sy1:sy2, sx1:sx2].copy()
+                pipeline_detections.append(PipelineDetection(
+                    detection=s_det,
+                    classification=s_cls,
+                    crop=s_crop
+                ))
+            det_latency_ms += (time.perf_counter() - t_sec_start) * 1000.0
 
         # Stage 4: Temporal Tracking & Anti-Flicker (for Continuous Video/Driving)
         speed_limit = None

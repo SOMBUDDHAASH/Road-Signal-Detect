@@ -128,6 +128,10 @@ The table below outlines every code file in the repository, its core purpose, an
 | **`src/live_feed.py`** | Continuous video loop for dashcam/headless car deployment with standard OpenCV display. | `src/pipeline.py`, `cv2` | Direct execution (`python src/live_feed.py`) |
 | **`src/detection/base.py`** | Abstract base class `BaseDetector` contract for Member B. | `src/schema.py`, `abc` | `yolo.py`, `shape_detector.py`, `mock.py`, `modules/B_detection/detector.py` |
 | **`src/detection/yolo.py`** | YOLOv8/v11 detection adapter with strict person filtering and aspect-ratio guards. | `src/detection/base.py`, `src/schema.py`, `ultralytics` | `src/pipeline.py`, `app.py` |
+| **`src/detection/plague_detector.py`** | Bio-inspired Plague Model secondary detector (seed discovery, cellular spread, immune cancellation). | `src/schema.py`, `src/detection/color_taxonomy.py`, `src/detection/ocr_engine.py` | `src/pipeline.py`, `app.py` |
+| **`src/detection/ocr_engine.py`** | Standalone road sign number and alphabet/string detection engine (speed numerals & words). | `cv2`, `numpy`, `PIL` | `src/detection/plague_detector.py`, `app.py` |
+| **`src/detection/color_taxonomy.py`** | 10 standard global road sign color combinations, HSV ranges, and skin exclusion filters. | `cv2`, `numpy` | `src/detection/plague_detector.py`, `app.py` |
+| **`src/dataset/common_signs_100.py`** | Comprehensive database of the 100 most common international road signs (Vienna Convention & MUTCD). | `json`, `dataclasses` | `app.py`, `data/road_signs_100.json` |
 | **`src/detection/shape_detector.py`** | Geometric circle/polygon detector with skin tone exclusion and edge contrast checks. | `src/detection/base.py`, `src/schema.py`, `cv2` | `src/detection/yolo.py` (fallback), `app.py` |
 | **`src/detection/mock.py`** | Lightweight deterministic mock detector and HSV color-contour detector. | `src/detection/base.py`, `src/schema.py` | `tests/test_adapters.py`, `tests/test_pipeline.py` |
 | **`src/classification/base.py`** | Abstract base class `BaseClassifier` contract for Member C. | `src/schema.py`, `abc` | `model.py`, `mock.py`, `modules/C_classification/classifier.py` |
@@ -261,6 +265,44 @@ This repository is architected so that each teammate can develop and refine thei
   * Maintains video ingestion (Webcam, Screenshare `mss`, YouTube `yt-dlp`).
   * Maintains the Streamlit Web Dashboard (`app.py`), Japanese Minimalist aesthetic, and FastAPI service (`api.py`).
   * Periodically merges branches from Members A, B, and C and verifies system integrity with `pytest`.
+
+---
+
+## 🦠 Bio-Inspired Plague Model Secondary Detector & OCR Engine
+
+When deep learning models encounter unrepresented classes, degraded lighting, or unfamiliar angles, primary detectors can return 0 signs. The project introduces an autonomous **Secondary Detector** implementing the **Plague Spreading Model** and a **Dedicated Traffic Sign OCR Engine**:
+
+```
+[ Primary Deep Detector (YOLO + GTSRB CNN) ]
+                     │
+         Found Signs?├────► YES ──► Output Confirmed Detections
+                     │
+                     ▼ NO (Zero Detections)
+[ Secondary Detector Activated: The Plague Model ]
+  ├── 1. Seed Discovery: Find adjacent color pairs (Red+White, Blue+White, Yellow+Black, etc.)
+  ├── 2. Cellular Spread: Flood-grow infection across valid palette connected components
+  ├── 3. Immune System Cancellation:
+  │      ├── Human Skin Detected (YCrCb > 18%)? ──► CANCEL / ABORT CANDIDATE
+  │      ├── Nature/Foliage Green in Red Sign? ──► CANCEL / ABORT CANDIDATE
+  │      └── Wandering Road Stripe (Solidity < 0.30)? ──► CANCEL / ABORT CANDIDATE
+  └── 4. Standalone OCR Engine:
+         ├── Number Detection: Speed limits (20, 30, 50, 60, 70, 80, 100, 120 km/h), weights, heights
+         └── String/Word Detection: STOP, YIELD, ZONE, ONE WAY, BUS, TAXI, EXIT, P
+```
+
+### 100 Most Common Road Signs & 10 Color Combinations
+* **100 Signs Taxonomy (`src/dataset/common_signs_100.py`)**: Complete international catalog spanning Vienna Convention (Classes A, B, C, D, E, F, G, H) and US MUTCD standards, exported to `data/road_signs_100.json`.
+* **10 Color Rules (`src/detection/color_taxonomy.py`)**:
+  1. `RED_WHITE_BLACK`: Regulatory prohibitions and danger warnings.
+  2. `RED_WHITE_SOLID`: Octagonal STOP sign and No Entry discs.
+  3. `BLUE_WHITE`: Mandatory actions, positive instructions, and motorway guidance.
+  4. `YELLOW_BLACK`: Physical road hazard warnings (MUTCD diamonds / European temporary).
+  5. `YELLOW_WHITE`: Priority road continuous right-of-way diamonds.
+  6. `GREEN_WHITE`: Directional navigation, highway exits, and mileposts.
+  7. `WHITE_BLACK`: General regulation, derestriction, and one-way streets.
+  8. `ORANGE_BLACK`: Active highway construction and detour zones.
+  9. `BLUE_RED`: Standing and parking prohibitions (No Parking / Clearway).
+  10. `BROWN_WHITE`: Tourist attractions, cultural heritage, and national parks.
 
 ---
 

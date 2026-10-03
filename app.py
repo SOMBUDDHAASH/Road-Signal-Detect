@@ -245,7 +245,8 @@ def get_active_pipeline(
     classifier_choice: str,
     padding_ratio: float = 0.05,
     custom_yolo_path: Optional[str] = None,
-    custom_cls_path: Optional[str] = None
+    custom_cls_path: Optional[str] = None,
+    enable_secondary_fallback: bool = True
 ) -> TrafficSignPipeline:
     """Builds the active pipeline with hot-swappable detector and classifier models."""
     # Detector selection
@@ -272,7 +273,8 @@ def get_active_pipeline(
         detector=detector,
         classifier=classifier,
         crop_padding_ratio=padding_ratio,
-        enable_tracking=True
+        enable_tracking=True,
+        enable_secondary_fallback=enable_secondary_fallback
     )
 
 
@@ -379,6 +381,11 @@ def main():
 
     conf_thresh = st.sidebar.slider("Confidence Gate", min_value=0.10, max_value=0.95, value=0.35, step=0.05)
     padding_ratio = st.sidebar.slider("Crop Margin Ratio", min_value=0.0, max_value=0.20, value=0.05, step=0.02)
+    enable_plague = st.sidebar.checkbox(
+        "🦠 Plague Secondary Detector + OCR",
+        value=True,
+        help="Cellular automaton color-pair spreading, unexpected-color cancellation, and OCR number/text detection when primary model returns 0 signs."
+    )
 
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 📁 System Architecture")
@@ -389,6 +396,7 @@ def main():
         <span class="zen-pill zen-pill-active"><span class="zen-dot"></span> Member B: YOLOv8 Detector</span>
         <span class="zen-pill zen-pill-active"><span class="zen-dot"></span> Member C: GTSRB 43 Classifier</span>
         <span class="zen-pill zen-pill-active"><span class="zen-dot"></span> Member D: Master Integration</span>
+        <span class="zen-pill zen-pill-active"><span class="zen-dot"></span> Engine: Plague Model & OCR</span>
     </div>
     """, unsafe_allow_html=True)
 
@@ -402,6 +410,7 @@ def main():
             "3. Live Video via Camera (Webcam / Dashcam)",
             "4. Continuous Screen Capture (Laptop Video)",
             "5. YouTube Dashcam Stream (yt-dlp)",
+            "6. 🌐 100 Common Signs & Color Taxonomy Explorer",
             "📁 Custom Dataset & Training Engine"
         ]
     )
@@ -412,7 +421,8 @@ def main():
         classifier_choice=chosen_classifier,
         padding_ratio=padding_ratio,
         custom_yolo_path=st.session_state.custom_yolo_path,
-        custom_cls_path=st.session_state.custom_classifier_path
+        custom_cls_path=st.session_state.custom_classifier_path,
+        enable_secondary_fallback=enable_plague
     )
     logger = st.session_state.event_logger
 
@@ -766,6 +776,121 @@ def main():
 
         st.markdown("---")
         render_event_log_ui(logger)
+
+    # =========================================================================
+    # OPTION 6: 100 COMMON ROAD SIGNS, COLOR TAXONOMY & OCR EXPLORER
+    # =========================================================================
+    elif app_mode.startswith("6."):
+        st.subheader("🌐 Option 6: 100 Common Road Signs, Color Taxonomy & OCR Engine")
+        st.markdown(
+            "Explore the **100 Most Common International Road Signs** (Vienna Convention & MUTCD), "
+            "the **10 Standard Color Combinations**, and test the **Plague Model Secondary Detector & OCR Engine**."
+        )
+
+        tab1, tab2, tab3 = st.tabs([
+            "📋 100 Common Road Signs Database",
+            "🎨 10 Standard Color Combinations",
+            "🦠 Plague Model & OCR Engine Playground"
+        ])
+
+        with tab1:
+            from src.dataset.common_signs_100 import COMMON_ROAD_SIGNS_100
+            import pandas as pd
+
+            c_f1, c_f2, c_f3 = st.columns(3)
+            with c_f1:
+                categories = ["All"] + sorted(list(set(s.category for s in COMMON_ROAD_SIGNS_100)))
+                cat_filter = st.selectbox("Filter by Category", categories)
+            with c_f2:
+                has_num_filter = st.selectbox("Contains Numbers (Speed/Weight/Distance)", ["All", "Yes (Numbers Only)", "No"])
+            with c_f3:
+                has_txt_filter = st.selectbox("Contains Text / Word (STOP, ZONE, etc.)", ["All", "Yes (Text Only)", "No"])
+
+            filtered_signs = COMMON_ROAD_SIGNS_100
+            if cat_filter != "All":
+                filtered_signs = [s for s in filtered_signs if s.category == cat_filter]
+            if has_num_filter == "Yes (Numbers Only)":
+                filtered_signs = [s for s in filtered_signs if s.has_number]
+            elif has_num_filter == "No":
+                filtered_signs = [s for s in filtered_signs if not s.has_number]
+            if has_txt_filter == "Yes (Text Only)":
+                filtered_signs = [s for s in filtered_signs if s.has_text]
+            elif has_txt_filter == "No":
+                filtered_signs = [s for s in filtered_signs if not s.has_text]
+
+            df_signs = pd.DataFrame([{
+                "ID": s.id,
+                "Code": s.code,
+                "Sign Name": s.name,
+                "Category": s.category,
+                "Shape": s.shape,
+                "Colors (Pri / Sec / Sym)": f"{s.primary_color} / {s.secondary_color} / {s.symbol_color}",
+                "Text / Number Content": f"Text: {s.text_content or '-'}" if s.has_text else (f"Number: {s.number_content or '-'}" if s.has_number else "-"),
+                "Description": s.description
+            } for s in filtered_signs])
+
+            st.dataframe(df_signs, use_container_width=True, height=450)
+            st.caption(f"Showing {len(filtered_signs)} of {len(COMMON_ROAD_SIGNS_100)} standardized international traffic signs.")
+
+        with tab2:
+            from src.detection.color_taxonomy import ROAD_SIGN_COLOR_COMBINATIONS
+
+            st.markdown("#### The 10 Most Common Traffic Sign Color Combinations Worldwide")
+            for rule in ROAD_SIGN_COLOR_COMBINATIONS:
+                with st.expander(f"🎨 **{rule.primary_color} + {rule.secondary_color}** ({rule.combination_id}) — {rule.semantic_meaning}", expanded=False):
+                    c_col1, c_col2 = st.columns([1, 2])
+                    with c_col1:
+                        st.markdown(f"**Primary Palette**: `{rule.primary_color}`")
+                        st.markdown(f"**Secondary Palette**: `{rule.secondary_color}`")
+                        st.markdown(f"**Accent / Symbol**: `{rule.accent_or_symbol_color}`")
+                        st.markdown(f"**Associated Categories**: `{', '.join(rule.associated_categories)}`")
+                    with c_col2:
+                        st.markdown(f"**Semantic Rule**: {rule.semantic_meaning}")
+                        st.markdown(f"**Representative Signs**: {', '.join(rule.representative_examples)}")
+
+        with tab3:
+            st.markdown("#### 🦠 Plague Model & OCR Engine Playground")
+            st.markdown(
+                "Upload any image crop or scene to test the **Plague Seed Spreading Model**, "
+                "**Immune System Color Cancellation**, and the **Standalone Number / Alphabet OCR Engine**."
+            )
+
+            ocr_file = st.file_uploader("Upload Crop to Run Plague & OCR Analysis", type=["png", "jpg", "jpeg", "webp"], key="plague_test_uploader")
+            if ocr_file:
+                c_bytes = np.asarray(bytearray(ocr_file.read()), dtype=np.uint8)
+                crop_img = cv2.imdecode(c_bytes, cv2.IMREAD_COLOR)
+                if crop_img is not None:
+                    c_p1, c_p2 = st.columns(2)
+                    with c_p1:
+                        st.markdown("##### 📷 Uploaded Image")
+                        st.image(cv2.cvtColor(crop_img, cv2.COLOR_BGR2RGB), use_container_width=True)
+
+                    with c_p2:
+                        st.markdown("##### 🔬 Secondary Diagnostic Analysis")
+                        from src.detection.ocr_engine import RoadSignOCREngine
+                        from src.detection.plague_detector import PlagueSecondaryDetector
+
+                        plague_eng = PlagueSecondaryDetector(enable_ocr=True)
+                        plague_results = plague_eng.detect(crop_img, conf_threshold=0.25)
+
+                        ocr_eng = RoadSignOCREngine()
+                        ocr_res = ocr_eng.detect(crop_img)
+
+                        if ocr_res:
+                            st.success(f"**OCR Detection Confirmed**: `{ocr_res.raw_string}` ({ocr_res.sign_type}, Confidence: {ocr_res.confidence*100:.1f}%)")
+                            if ocr_res.detected_number:
+                                st.metric("Recognized Numerical Value", f"{ocr_res.detected_number}")
+                            if ocr_res.detected_word:
+                                st.metric("Recognized Keyword / Word", f"{ocr_res.detected_word}")
+                        else:
+                            st.info("No direct OCR text/number glyph recognized inside central interior.")
+
+                        if plague_results:
+                            st.markdown(f"**Plague Spread Regions Found**: `{len(plague_results)}`")
+                            for p_det, p_cls in plague_results:
+                                st.markdown(f"- **[{p_cls.class_id}] {p_cls.class_name}** (Confidence: {p_cls.confidence*100:.1f}%) at `{p_det.bbox.to_xyxy()}`")
+                        else:
+                            st.warning("Plague model immune system canceled this region (no valid color seed, non-sign texture, or skin tone detected).")
 
     # =========================================================================
     # CUSTOM DATASET & TRAINING ENGINE
