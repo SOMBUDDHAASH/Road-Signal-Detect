@@ -3,7 +3,7 @@ FastAPI REST microservice for Traffic Sign Detection & Recognition.
 Maintained by Member D (Integration & Pipeline Lead).
 """
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import io
 import cv2
 import numpy as np
@@ -15,7 +15,7 @@ from src.pipeline import TrafficSignPipeline
 
 app = FastAPI(
     title="Road / Traffic Sign Detection API",
-    description="REST backend for GTSRB Traffic Sign Detection and Recognition. Maintained by Member D.",
+    description="REST backend for GTSRB Traffic Sign Detection and Recognition with TT100K Secondary Analysis. Maintained by Member D.",
     version="1.0.0"
 )
 
@@ -29,12 +29,22 @@ def get_pipeline_instance(mode: str = "heuristic") -> TrafficSignPipeline:
     return pipelines[mode]
 
 
+class TT100KResponse(BaseModel):
+    class_code: str
+    class_name: str
+    confidence: float
+    mapped_gtsrb_id: Optional[int] = None
+    is_consensus: bool = False
+    consensus_note: str = ""
+
+
 class DetectionResponse(BaseModel):
     bbox: List[int]
     confidence: float
     class_id: int
     class_name: str
     category: str
+    tt100k: Optional[TT100KResponse] = None
 
 
 class PredictResponse(BaseModel):
@@ -48,7 +58,19 @@ def health_check():
     return {
         "status": "healthy",
         "service": "traffic-sign-pipeline",
-        "available_modes": ["mock", "heuristic", "production"]
+        "available_modes": ["mock", "heuristic", "production"],
+        "secondary_models": ["plague_detector", "tt100k_classifier"]
+    }
+
+
+@app.get("/tt100k/classes")
+def list_tt100k_classes():
+    from src.classification.tt100k_taxonomy import TT100K_CLASSES, TT100K_DESCRIPTIONS, TT100K_TO_GTSRB_MAP
+    return {
+        "total_classes": len(TT100K_CLASSES),
+        "classes": TT100K_CLASSES,
+        "descriptions": TT100K_DESCRIPTIONS,
+        "cross_domain_gtsrb_mapping": TT100K_TO_GTSRB_MAP
     }
 
 
@@ -56,7 +78,8 @@ def health_check():
 async def predict_image(
     file: UploadFile = File(...),
     mode: str = Query("heuristic", pattern="^(mock|heuristic|production)$"),
-    conf_threshold: float = Query(0.50, ge=0.0, le=1.0)
+    conf_threshold: float = Query(0.50, ge=0.0, le=1.0),
+    enable_tt100k: bool = Query(False)
 ):
     contents = await file.read()
     nparr = np.frombuffer(contents, np.uint8)
@@ -66,16 +89,28 @@ async def predict_image(
         raise HTTPException(status_code=400, detail="Invalid image file.")
 
     pipeline = get_pipeline_instance(mode)
-    result = pipeline.process_frame(image, conf_threshold=conf_threshold)
+    result = pipeline.process_frame(image, conf_threshold=conf_threshold, is_video=False, enable_tt100k=enable_tt100k)
 
     detections_out = []
     for item in result.detections:
+        tt_resp = None
+        if getattr(item, "tt100k_result", None) is not None:
+            tt = item.tt100k_result
+            tt_resp = TT100KResponse(
+                class_code=tt.class_code,
+                class_name=tt.class_name,
+                confidence=round(float(tt.confidence), 4),
+                mapped_gtsrb_id=tt.mapped_gtsrb_id,
+                is_consensus=tt.is_consensus,
+                consensus_note=tt.consensus_note
+            )
         detections_out.append(DetectionResponse(
             bbox=list(item.detection.bbox.to_xyxy()),
             confidence=round(item.classification.confidence, 4),
             class_id=item.classification.class_id,
             class_name=item.classification.class_name,
-            category=item.classification.category.value
+            category=item.classification.category.value,
+            tt100k=tt_resp
         ))
 
     return PredictResponse(
@@ -89,7 +124,8 @@ async def predict_image(
 async def predict_annotated_image(
     file: UploadFile = File(...),
     mode: str = Query("heuristic", pattern="^(mock|heuristic|production)$"),
-    conf_threshold: float = Query(0.50, ge=0.0, le=1.0)
+    conf_threshold: float = Query(0.50, ge=0.0, le=1.0),
+    enable_tt100k: bool = Query(False)
 ):
     contents = await file.read()
     nparr = np.frombuffer(contents, np.uint8)
@@ -99,7 +135,7 @@ async def predict_annotated_image(
         raise HTTPException(status_code=400, detail="Invalid image file.")
 
     pipeline = get_pipeline_instance(mode)
-    result = pipeline.process_frame(image, conf_threshold=conf_threshold)
+    result = pipeline.process_frame(image, conf_threshold=conf_threshold, is_video=False, enable_tt100k=enable_tt100k)
 
     # Encode annotated frame as JPEG
     success, buffer = cv2.imencode(".jpg", result.annotated_frame)

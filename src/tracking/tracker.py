@@ -7,7 +7,7 @@ from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass, field
 import numpy as np
 
-from src.schema import PipelineDetection, BoundingBox, ClassificationResult, DetectionResult, SignCategory
+from src.schema import PipelineDetection, BoundingBox, ClassificationResult, DetectionResult, SignCategory, TT100KResult
 from src.gtsrb_classes import get_class_name, get_sign_category
 
 
@@ -41,6 +41,7 @@ class TrackedSign:
     disappeared_count: int = 0
     history_classes: List[int] = field(default_factory=list)
     history_boxes: List[BoundingBox] = field(default_factory=list)
+    tt100k_result: Optional[TT100KResult] = None
 
     def update(self, new_detection: PipelineDetection, smoothing_alpha: float = 0.65):
         """Update track with new frame detection and smooth coordinates."""
@@ -48,6 +49,8 @@ class TrackedSign:
         self.disappeared_count = 0
         self.detection_conf = new_detection.detection.confidence
         self.crop = new_detection.crop
+        if getattr(new_detection, "tt100k_result", None) is not None:
+            self.tt100k_result = new_detection.tt100k_result
 
         # Smooth bounding box
         nb = new_detection.detection.bbox
@@ -179,7 +182,8 @@ class TemporalSignTracker:
             classification=det.classification,
             detection_conf=det.detection.confidence,
             crop=det.crop,
-            history_classes=[det.classification.class_id]
+            history_classes=[det.classification.class_id],
+            tt100k_result=getattr(det, "tt100k_result", None)
         )
         self.tracks[tid] = track
         return tid
@@ -224,6 +228,7 @@ class TemporalSignTracker:
                         detector_class_id=0
                     ),
                     classification=trk.classification,
-                    crop=trk.crop
+                    crop=trk.crop,
+                    tt100k_result=trk.tt100k_result
                 ))
         return active_items

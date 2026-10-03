@@ -116,11 +116,24 @@ class ClassificationResult:
 
 
 @dataclass
+class TT100KResult:
+    """Contract for Secondary TT100K (Tsinghua-Tencent 100K) Analysis Model."""
+    class_code: str
+    class_name: str
+    confidence: float
+    mapped_gtsrb_id: Optional[int] = None
+    is_consensus: bool = False
+    consensus_note: str = ""
+    top_k: List[Tuple[str, str, float]] = field(default_factory=list)
+
+
+@dataclass
 class PipelineDetection:
     """Combined detection + classification result with extracted cropped patch."""
     detection: DetectionResult
     classification: ClassificationResult
     crop: Optional[np.ndarray] = None
+    tt100k_result: Optional[TT100KResult] = None
 
 
 @dataclass

@@ -63,7 +63,8 @@ class TrafficSignPipeline:
         enable_ocr: bool = True,
         enable_stage2_proposals: bool = True,
         enable_semantic_verification: bool = True,
-        enable_environmental_enhancer: bool = False
+        enable_environmental_enhancer: bool = False,
+        enable_tt100k: bool = False
     ):
         self.detector = detector
         self.classifier = classifier
@@ -73,6 +74,11 @@ class TrafficSignPipeline:
         self.enable_tracking = enable_tracking
         self.tracker = TemporalSignTracker() if enable_tracking else None
         self.enable_environmental_enhancer = enable_environmental_enhancer
+        self.enable_tt100k = enable_tt100k
+        self.tt100k_classifier = None
+        if self.enable_tt100k:
+            from src.classification.tt100k_model import get_tt100k_classifier
+            self.tt100k_classifier = get_tt100k_classifier()
 
         # Perception Method Toggles
         # Primary GTSRB deep learning models are prioritized and always active.
@@ -123,7 +129,8 @@ class TrafficSignPipeline:
         enable_ocr: Optional[bool] = None,
         enable_stage2_proposals: Optional[bool] = None,
         enable_semantic_verification: Optional[bool] = None,
-        enable_environmental_enhancer: Optional[bool] = None
+        enable_environmental_enhancer: Optional[bool] = None,
+        enable_tt100k: Optional[bool] = None
     ) -> PipelineResult:
         """
         Processes a single image frame through the full pipeline:
@@ -144,6 +151,7 @@ class TrafficSignPipeline:
         use_stage2 = self.enable_stage2_proposals if enable_stage2_proposals is None else enable_stage2_proposals
         use_verifier = self.enable_semantic_verification if enable_semantic_verification is None else enable_semantic_verification
         use_env = self.enable_environmental_enhancer if enable_environmental_enhancer is None else enable_environmental_enhancer
+        use_tt100k = self.enable_tt100k if enable_tt100k is None else enable_tt100k
 
         # Environmental Pre-Conditioning (Night, Rain, Glare, Fog)
         env_telemetry = None
@@ -289,6 +297,22 @@ class TrafficSignPipeline:
                 ))
             det_latency_ms += (time.perf_counter() - t_sec_start) * 1000.0
 
+        # Stage 3.8: Secondary TT100K Cross-Domain Multi-Scale Analysis
+        # Toggleable secondary perception model (Zero overhead when toggled OFF)
+        tt100k_latency_ms = 0.0
+        if use_tt100k and pipeline_detections:
+            if self.tt100k_classifier is None:
+                from src.classification.tt100k_model import get_tt100k_classifier
+                self.tt100k_classifier = get_tt100k_classifier()
+            t_tt_start = time.perf_counter()
+            for p_det in pipeline_detections:
+                if p_det.crop is not None and p_det.crop.size > 0:
+                    p_det.tt100k_result = self.tt100k_classifier.analyze_crop(
+                        crop=p_det.crop,
+                        primary_gtsrb_id=p_det.classification.class_id
+                    )
+            tt100k_latency_ms = (time.perf_counter() - t_tt_start) * 1000.0
+
         # Stage 4: Temporal Tracking & Anti-Flicker (for Continuous Video/Driving)
         speed_limit = None
         hazard = None
@@ -316,7 +340,7 @@ class TrafficSignPipeline:
                     hazard = d.classification.class_name
 
         # Stage 5: Performance Telemetry & HUD Visualization
-        total_latency_ms = det_latency_ms + cls_latency_ms
+        total_latency_ms = det_latency_ms + cls_latency_ms + tt100k_latency_ms
         current_time = time.perf_counter()
         instant_fps = 1.0 / max(1e-5, current_time - self._prev_frame_time)
         self._prev_frame_time = current_time
@@ -327,6 +351,8 @@ class TrafficSignPipeline:
             "classify_ms": round(cls_latency_ms, 2),
             "total_ms": round(total_latency_ms, 2),
         }
+        if use_tt100k:
+            latency_dict["tt100k_ms"] = round(tt100k_latency_ms, 2)
 
         annotated = self.visualizer.annotate(
             frame=frame,

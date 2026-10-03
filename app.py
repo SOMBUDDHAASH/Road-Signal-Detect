@@ -257,7 +257,8 @@ def get_active_pipeline(
     enable_ocr: bool = True,
     enable_stage2_proposals: bool = True,
     enable_semantic_verification: bool = True,
-    enable_environmental_enhancer: bool = False
+    enable_environmental_enhancer: bool = False,
+    enable_tt100k: bool = False
 ) -> TrafficSignPipeline:
     """Builds the active pipeline with hot-swappable detector and classifier models."""
     # Detector selection
@@ -305,7 +306,8 @@ def get_active_pipeline(
         enable_ocr=enable_ocr,
         enable_stage2_proposals=enable_stage2_proposals,
         enable_semantic_verification=enable_semantic_verification,
-        enable_environmental_enhancer=enable_environmental_enhancer
+        enable_environmental_enhancer=enable_environmental_enhancer,
+        enable_tt100k=enable_tt100k
     )
 
 
@@ -471,6 +473,11 @@ def main():
         value=True,
         help="Applies adaptive CLAHE, low-light gamma correction, and dehazing for rain, fog, and night scenes."
     )
+    toggle_tt100k = st.sidebar.toggle(
+        "🇨🇳 TT100K Secondary Analysis Model",
+        value=False,
+        help="Tsinghua-Tencent 100K 221-class deep learning model for cross-domain validation and consensus checking."
+    )
 
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 📁 System Architecture")
@@ -479,6 +486,7 @@ def main():
     stage2_badge_cls = "zen-pill-active" if toggle_stage2 else "zen-pill-inactive"
     audio_badge_cls = "zen-pill-active" if toggle_audio else "zen-pill-inactive"
     env_badge_cls = "zen-pill-active" if toggle_env else "zen-pill-inactive"
+    tt100k_badge_cls = "zen-pill-active" if toggle_tt100k else "zen-pill-inactive"
     st.sidebar.markdown(f"""
     <div style="display:flex; flex-direction:column; gap:6px;">
         <span class="zen-pill zen-pill-active"><span class="zen-dot"></span> Pipeline: Standalone Ready</span>
@@ -491,6 +499,7 @@ def main():
         <span class="zen-pill {plague_badge_cls}"><span class="zen-dot"></span> Secondary: Plague Fallback ({'Active' if toggle_plague else 'Bypassed'})</span>
         <span class="zen-pill {ocr_badge_cls}"><span class="zen-dot"></span> Secondary: OCR Engine ({'Active' if toggle_ocr else 'Bypassed'})</span>
         <span class="zen-pill {stage2_badge_cls}"><span class="zen-dot"></span> Proposals: Stage 2 ({'Active' if toggle_stage2 else 'Pure YOLO'})</span>
+        <span class="zen-pill {tt100k_badge_cls}"><span class="zen-dot"></span> Secondary: TT100K 221-Class ({'Active' if toggle_tt100k else 'Bypassed'})</span>
     </div>
     """, unsafe_allow_html=True)
 
@@ -520,7 +529,8 @@ def main():
         enable_ocr=toggle_ocr,
         enable_stage2_proposals=toggle_stage2,
         enable_semantic_verification=toggle_verifier,
-        enable_environmental_enhancer=toggle_env
+        enable_environmental_enhancer=toggle_env,
+        enable_tt100k=toggle_tt100k
     )
     logger = st.session_state.event_logger
 
@@ -720,11 +730,38 @@ def main():
                     st.info("ℹ️ Detection threshold filtered this crop. Adjust the confidence slider in the sidebar.")
 
             # Telemetry Metrics
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Signs Detected", result.num_signs_detected)
-            m2.metric("Total Latency", f"{result.total_latency_ms:.1f} ms")
-            m3.metric("Localization Time", f"{result.latency_ms['detect_ms']:.1f} ms")
-            m4.metric("Classification Time", f"{result.latency_ms['classify_ms']:.1f} ms")
+            m_cols = st.columns(5 if "tt100k_ms" in result.latency_ms else 4)
+            m_cols[0].metric("Signs Detected", result.num_signs_detected)
+            m_cols[1].metric("Total Latency", f"{result.total_latency_ms:.1f} ms")
+            m_cols[2].metric("Localization Time", f"{result.latency_ms['detect_ms']:.1f} ms")
+            m_cols[3].metric("Classification Time", f"{result.latency_ms['classify_ms']:.1f} ms")
+            if "tt100k_ms" in result.latency_ms:
+                m_cols[4].metric("TT100K Secondary", f"{result.latency_ms['tt100k_ms']:.1f} ms")
+
+            # TT100K Secondary Consensus Card
+            if toggle_tt100k and result.detections:
+                for d_idx, d in enumerate(result.detections):
+                    if getattr(d, "tt100k_result", None) is not None:
+                        tt = d.tt100k_result
+                        status_color = "#15803d" if tt.is_consensus else "#b45309"
+                        status_bg = "rgba(34, 197, 94, 0.08)" if tt.is_consensus else "rgba(245, 158, 11, 0.08)"
+                        status_border = "rgba(34, 197, 94, 0.3)" if tt.is_consensus else "rgba(245, 158, 11, 0.3)"
+                        with st.expander(f"🇨🇳 TT100K Secondary Consensus Telemetry (Sign #{d_idx+1}: {tt.class_code})", expanded=True):
+                            st.markdown(f"""
+                            <div style="background-color: {status_bg}; border: 1px solid {status_border}; border-radius: 8px; padding: 12px; margin-bottom: 10px;">
+                                <div style="color: {status_color}; font-weight: 700; font-size: 0.85rem; text-transform: uppercase;">{tt.consensus_note}</div>
+                                <div style="font-size: 1.1rem; font-weight: 600; margin-top: 4px;">Predicted TT100K Sign: <code>{tt.class_code}</code> — {tt.class_name}</div>
+                                <div style="font-size: 0.88rem; color: #4B5563; margin-top: 2px;">TT100K Confidence: <b>{tt.confidence*100:.1f}%</b> • Equivalent GTSRB Class ID: <b>{tt.mapped_gtsrb_id if tt.mapped_gtsrb_id is not None else 'Unmapped'}</b></div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            if tt.top_k:
+                                import pandas as pd
+                                st.dataframe(pd.DataFrame([{
+                                    "Rank": i + 1,
+                                    "TT100K Code": code,
+                                    "Semantic Name": name,
+                                    "Probability": f"{prob*100:.2f}%"
+                                } for i, (code, name, prob) in enumerate(tt.top_k)]), use_container_width=True)
 
             st.markdown("---")
             render_event_log_ui(logger)
@@ -756,10 +793,37 @@ def main():
                     st.markdown("##### 🎯 Detection & Classification HUD")
                     st.image(cv2.cvtColor(result.annotated_frame, cv2.COLOR_BGR2RGB), use_container_width=True)
 
-                m1, m2, m3 = st.columns(3)
-                m1.metric("Signs Detected", result.num_signs_detected)
-                m2.metric("Total Latency", f"{result.total_latency_ms:.1f} ms")
-                m3.metric("Throughput", f"{result.fps:.1f} FPS")
+                m_cols2 = st.columns(4 if "tt100k_ms" in result.latency_ms else 3)
+                m_cols2[0].metric("Signs Detected", result.num_signs_detected)
+                m_cols2[1].metric("Total Latency", f"{result.total_latency_ms:.1f} ms")
+                m_cols2[2].metric("Throughput", f"{result.fps:.1f} FPS")
+                if "tt100k_ms" in result.latency_ms:
+                    m_cols2[3].metric("TT100K Latency", f"{result.latency_ms['tt100k_ms']:.1f} ms")
+
+                # TT100K Secondary Consensus Card for Still Images
+                if toggle_tt100k and result.detections:
+                    for d_idx, d in enumerate(result.detections):
+                        if getattr(d, "tt100k_result", None) is not None:
+                            tt = d.tt100k_result
+                            status_color = "#15803d" if tt.is_consensus else "#b45309"
+                            status_bg = "rgba(34, 197, 94, 0.08)" if tt.is_consensus else "rgba(245, 158, 11, 0.08)"
+                            status_border = "rgba(34, 197, 94, 0.3)" if tt.is_consensus else "rgba(245, 158, 11, 0.3)"
+                            with st.expander(f"🇨🇳 TT100K Secondary Consensus Telemetry (Sign #{d_idx+1}: {tt.class_code})", expanded=True):
+                                st.markdown(f"""
+                                <div style="background-color: {status_bg}; border: 1px solid {status_border}; border-radius: 8px; padding: 12px; margin-bottom: 10px;">
+                                    <div style="color: {status_color}; font-weight: 700; font-size: 0.85rem; text-transform: uppercase;">{tt.consensus_note}</div>
+                                    <div style="font-size: 1.1rem; font-weight: 600; margin-top: 4px;">Predicted TT100K Sign: <code>{tt.class_code}</code> — {tt.class_name}</div>
+                                    <div style="font-size: 0.88rem; color: #4B5563; margin-top: 2px;">TT100K Confidence: <b>{tt.confidence*100:.1f}%</b> • Equivalent GTSRB Class ID: <b>{tt.mapped_gtsrb_id if tt.mapped_gtsrb_id is not None else 'Unmapped'}</b></div>
+                                </div>
+                                """, unsafe_allow_html=True)
+                                if tt.top_k:
+                                    import pandas as pd
+                                    st.dataframe(pd.DataFrame([{
+                                        "Rank": i + 1,
+                                        "TT100K Code": code,
+                                        "Semantic Name": name,
+                                        "Probability": f"{prob*100:.2f}%"
+                                    } for i, (code, name, prob) in enumerate(tt.top_k)]), use_container_width=True)
 
                 st.markdown("---")
                 render_event_log_ui(logger)
@@ -981,10 +1045,11 @@ def main():
             "the **10 Standard Color Combinations**, and test the **Plague Model Secondary Detector & OCR Engine**."
         )
 
-        tab1, tab2, tab3 = st.tabs([
+        tab1, tab2, tab3, tab4 = st.tabs([
             "📋 100 Common Road Signs Database",
             "🎨 10 Standard Color Combinations",
-            "🦠 Plague Model & OCR Engine Playground"
+            "🦠 Plague Model & OCR Engine Playground",
+            "🇨🇳 TT100K 221-Class Benchmark & Consensus"
         ])
 
         with tab1:
@@ -1085,6 +1150,100 @@ def main():
                                 st.markdown(f"- **[{p_cls.class_id}] {p_cls.class_name}** (Confidence: {p_cls.confidence*100:.1f}%) at `{p_det.bbox.to_xyxy()}`")
                         else:
                             st.warning("Plague model immune system canceled this region (no valid color seed, non-sign texture, or skin tone detected).")
+
+        with tab4:
+            st.markdown("#### 🇨🇳 Tsinghua-Tencent 100K (TT100K) Secondary Benchmark & Consensus Engine")
+            st.markdown(
+                "TT100K features **100,000 high-resolution street-view images** and **30,000 traffic sign instances** "
+                "spanning **221 categories** (45 core benchmark classes). Operates as a secondary cross-domain validator."
+            )
+
+            from src.classification.tt100k_taxonomy import TT100K_CLASSES, TT100K_DESCRIPTIONS, TT100K_TO_GTSRB_MAP, get_tt100k_name, map_tt100k_to_gtsrb
+            from src.classification.tt100k_model import get_tt100k_classifier
+            import pandas as pd
+
+            c_tt_sub1, c_tt_sub2 = st.tabs(["📊 221-Class Ontology & Cross-Domain Mapping", "🔬 TT100K Inference Playground"])
+
+            with c_tt_sub1:
+                cat_filter = st.selectbox(
+                    "Filter TT100K Category",
+                    ["All Categories (221 Classes)", "Prohibitory (pl*, pm*, pn, p*, pa*, pr*)", "Warning / Danger (w*)", "Indicatory & Mandatory (i*, il*, ip)"],
+                    key="tt_cat_filter"
+                )
+
+                filtered_codes = []
+                for code in TT100K_CLASSES:
+                    if cat_filter.startswith("Prohibitory") and not (code.startswith("p") or code.startswith("pr") or code.startswith("pl") or code.startswith("pm")):
+                        continue
+                    elif cat_filter.startswith("Warning") and not code.startswith("w"):
+                        continue
+                    elif cat_filter.startswith("Indicatory") and not (code.startswith("i") or code.startswith("il") or code.startswith("m")):
+                        continue
+                    filtered_codes.append(code)
+
+                df_tt = pd.DataFrame([{
+                    "Index": idx,
+                    "TT100K Code": code,
+                    "Sign Name & Description": get_tt100k_name(code),
+                    "Mapped GTSRB ID": map_tt100k_to_gtsrb(code) if map_tt100k_to_gtsrb(code) is not None else "Unmapped",
+                    "Category": "Prohibitory" if code.startswith("p") else ("Warning" if code.startswith("w") else ("Indicatory" if code.startswith("i") else "Other"))
+                } for idx, code in enumerate(filtered_codes)])
+
+                st.dataframe(df_tt, use_container_width=True, height=400)
+                st.caption(f"Displaying {len(filtered_codes)} of 221 total TT100K classes.")
+
+            with c_tt_sub2:
+                st.markdown("##### Test Crops Against the TT100K 221-Class Neural Network")
+                tt_samples = sorted(glob.glob("data/tt100k/samples/*.jpg") + glob.glob("data/tt100k/samples/*.png"))
+
+                col_sample, col_up = st.columns([1.2, 2])
+                test_crop = None
+                with col_sample:
+                    st.markdown("**Sample Images (HuggingFace TT100K)**:")
+                    if tt_samples:
+                        chosen_tt_sample = st.selectbox("Select Sample", [os.path.basename(p) for p in tt_samples], key="tt_sample_sel")
+                        if chosen_tt_sample:
+                            s_path = os.path.join("data", "tt100k", "samples", chosen_tt_sample)
+                            test_crop = cv2.imread(s_path)
+                    else:
+                        st.caption("No sample files found in data/tt100k/samples/")
+
+                with col_up:
+                    st.markdown("**Or Upload Custom Crop**:")
+                    uploaded_tt = st.file_uploader("Upload Image", type=["jpg", "png", "jpeg"], key="tt_up_test")
+                    if uploaded_tt:
+                        t_bytes = np.asarray(bytearray(uploaded_tt.read()), dtype=np.uint8)
+                        test_crop = cv2.imdecode(t_bytes, cv2.IMREAD_COLOR)
+
+                if test_crop is not None:
+                    c_img, c_res = st.columns([1, 2])
+                    with c_img:
+                        st.image(cv2.cvtColor(test_crop, cv2.COLOR_BGR2RGB), caption=f"Input Crop ({test_crop.shape[1]}x{test_crop.shape[0]})", width=180)
+                    with c_res:
+                        tt_clf = get_tt100k_classifier()
+                        sim_gtsrb = st.selectbox("Simulate Primary GTSRB Prediction (for Consensus Check)", [None] + list(range(43)), index=0, format_func=lambda x: f"GTSRB Class [{x}]" if x is not None else "None (Standalone)")
+                        tt_res = tt_clf.analyze_crop(test_crop, primary_gtsrb_id=sim_gtsrb)
+
+                        status_color = "#15803d" if tt_res.is_consensus else "#b45309"
+                        status_bg = "rgba(34, 197, 94, 0.08)" if tt_res.is_consensus else "rgba(245, 158, 11, 0.08)"
+                        status_border = "rgba(34, 197, 94, 0.3)" if tt_res.is_consensus else "rgba(245, 158, 11, 0.3)"
+
+                        st.markdown(f"""
+                        <div style="background-color: {status_bg}; border: 1px solid {status_border}; border-radius: 8px; padding: 12px; margin-bottom: 10px;">
+                            <div style="color: {status_color}; font-weight: 700; font-size: 0.85rem; text-transform: uppercase;">{tt_res.consensus_note}</div>
+                            <div style="font-size: 1.15rem; font-weight: 600; margin-top: 4px;">Top TT100K Class: <code>{tt_res.class_code}</code> — {tt_res.class_name}</div>
+                            <div style="font-size: 0.88rem; color: #4B5563; margin-top: 2px;">Confidence: <b>{tt_res.confidence*100:.1f}%</b> • Mapped GTSRB ID: <b>{tt_res.mapped_gtsrb_id if tt_res.mapped_gtsrb_id is not None else 'Unmapped'}</b></div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                        if tt_res.top_k:
+                            st.markdown("**Top-5 Cross-Domain Hypotheses**:")
+                            st.dataframe(pd.DataFrame([{
+                                "Rank": i + 1,
+                                "TT100K Code": code,
+                                "Semantic Name": name,
+                                "Probability": f"{prob*100:.2f}%"
+                            } for i, (code, name, prob) in enumerate(tt_res.top_k)]), use_container_width=True)
 
     # =========================================================================
     # CUSTOM DATASET & TRAINING ENGINE

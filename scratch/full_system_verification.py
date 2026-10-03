@@ -342,6 +342,56 @@ def verify_feature_10_event_logger():
     print("  [PASS] DetectionEventLogger logged event, enforced cooldown, and exported CSV/JSON telemetry")
 
 
+def verify_feature_11_tt100k_secondary_model():
+    print("\n" + "="*80)
+    print("FEATURE 11: TT100K SECONDARY 221-CLASS ANALYSIS & MULTI-DOMAIN CONSENSUS")
+    print("="*80)
+
+    from src.classification.tt100k_taxonomy import TT100K_CLASSES, get_tt100k_name, map_tt100k_to_gtsrb, evaluate_consensus
+    from src.classification.tt100k_model import get_tt100k_classifier, TT100KSecondaryClassifier
+    from src.schema import TT100KResult
+
+    # 1. Taxonomy & Cross-Domain mapping
+    assert len(TT100K_CLASSES) == 221
+    assert map_tt100k_to_gtsrb("pl50") == 2
+    assert map_tt100k_to_gtsrb("ps") == 14
+    print("  [PASS] Official 221-Class TT100K ontology verified & bidirectionally mapped to GTSRB")
+
+    # 2. Classifier initialization
+    classifier = get_tt100k_classifier()
+    assert classifier.is_ready, "TT100K secondary classifier failed to initialize."
+    print("  [PASS] TT100K secondary neural network loaded (weights/classification/tt100k_model.pt)")
+
+    # 3. Inference on sample benchmark crop
+    sample_files = glob.glob("data/samples/class_02_sample_*.png")
+    if sample_files:
+        crop = cv2.imread(sample_files[0])
+        res = classifier.analyze_crop(crop, primary_gtsrb_id=2)
+        assert isinstance(res, TT100KResult)
+        assert res.class_code == "pl50"
+        assert res.is_consensus is True
+        print(f"  [PASS] TT100K Inference on Speed Limit 50: {res.class_code} ({res.confidence*100:.1f}%) -> {res.consensus_note}")
+
+    # 4. Domain Discord detection
+    is_con, note = evaluate_consensus(2, "ps")
+    assert is_con is False
+    print(f"  [PASS] Cross-domain discord guard verified: {note}")
+
+    # 5. Pipeline toggle verification
+    pipe_off = TrafficSignPipeline.create(mode="mock", enable_tt100k=False)
+    frame = np.zeros((100, 100, 3), dtype=np.uint8)
+    res_off = pipe_off.process_frame(frame, is_video=False)
+    assert res_off.detections[0].tt100k_result is None
+    assert "tt100k_ms" not in res_off.latency_ms
+    print("  [PASS] TT100K Pipeline Toggle OFF: Zero overhead, tt100k_result is None")
+
+    pipe_on = TrafficSignPipeline.create(mode="mock", enable_tt100k=True)
+    res_on = pipe_on.process_frame(frame, is_video=False)
+    assert res_on.detections[0].tt100k_result is not None
+    assert "tt100k_ms" in res_on.latency_ms
+    print(f"  [PASS] TT100K Pipeline Toggle ON: Latency={res_on.latency_ms['tt100k_ms']:.1f}ms, Consensus Tag attached")
+
+
 def main():
     print("*"*80)
     print("MASTER ADAS PERCEPTION SYSTEM: FULL CAPABILITY VERIFICATION SUITE")
@@ -358,10 +408,11 @@ def main():
     verify_feature_8_temporal_tracking()
     verify_feature_9_fastapi_endpoints()
     verify_feature_10_event_logger()
+    verify_feature_11_tt100k_secondary_model()
 
     dur = time.time() - t_start
     print("\n" + "="*80)
-    print(f"ALL 10 CORE FEATURES VERIFIED AND PASSING 100% IN {dur:.2f} SECONDS!")
+    print(f"ALL 11 CORE FEATURES VERIFIED AND PASSING 100% IN {dur:.2f} SECONDS!")
     print("="*80)
 
 

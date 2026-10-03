@@ -166,6 +166,36 @@ class Visualizer:
             cv2.LINE_AA
         )
 
+        # Draw secondary TT100K consensus tag
+        if getattr(item, "tt100k_result", None) is not None:
+            tt = item.tt100k_result
+            tt_status = "CONSENSUS" if tt.is_consensus else "DISCORD"
+            tt_color = (60, 220, 60) if tt.is_consensus else (40, 140, 255)
+            tt_text = f"TT100K: {tt.class_code} ({int(tt.confidence * 100)}%) [{tt_status}]"
+
+            (tt_w, tt_h), _ = cv2.getTextSize(tt_text, self.font, self.font_scale * 0.82, self.font_thickness)
+            tt_y1 = y2 + 3
+            tt_y2 = y2 + tt_h + 9
+            if tt_y2 > canvas.shape[0]:
+                tt_y1 = max(0, badge_y1 - tt_h - 6)
+                tt_y2 = badge_y1 - 2
+
+            tt_x1 = max(0, x1)
+            tt_x2 = min(canvas.shape[1], x1 + tt_w + 10)
+
+            cv2.rectangle(canvas, (tt_x1, tt_y1), (tt_x2, tt_y2), (20, 20, 20), cv2.FILLED)
+            cv2.rectangle(canvas, (tt_x1, tt_y1), (tt_x2, tt_y2), tt_color, 1, cv2.LINE_AA)
+            cv2.putText(
+                canvas,
+                tt_text,
+                (tt_x1 + 5, tt_y2 - 3),
+                self.font,
+                self.font_scale * 0.82,
+                (240, 240, 240),
+                self.font_thickness,
+                cv2.LINE_AA
+            )
+
     def _draw_telemetry_hud(
         self,
         canvas: np.ndarray,
@@ -174,7 +204,8 @@ class Visualizer:
         sign_count: int = 0
     ):
         h, w = canvas.shape[:2]
-        hud_w, hud_h = 240, 75
+        tt_lat = latency_ms.get("tt100k_ms") if latency_ms else None
+        hud_w, hud_h = 240, (92 if tt_lat is not None else 75)
 
         # Draw semi-transparent HUD background banner at top-left
         overlay = canvas.copy()
@@ -191,3 +222,5 @@ class Visualizer:
         cv2.putText(canvas, f"TRAFFIC SIGN PIPELINE", (20, 28), self.font, 0.45, (0, 220, 255), 1, cv2.LINE_AA)
         cv2.putText(canvas, f"{fps_text} | Total: {total_lat:.1f}ms", (20, 48), self.font, 0.42, (230, 230, 230), 1, cv2.LINE_AA)
         cv2.putText(canvas, f"Det: {det_lat:.1f}ms | Cls: {cls_lat:.1f}ms | Signs: {sign_count}", (20, 68), self.font, 0.38, (180, 180, 180), 1, cv2.LINE_AA)
+        if tt_lat is not None:
+            cv2.putText(canvas, f"TT100K: {tt_lat:.1f}ms (Consensus Engine)", (20, 85), self.font, 0.38, (120, 230, 120), 1, cv2.LINE_AA)
