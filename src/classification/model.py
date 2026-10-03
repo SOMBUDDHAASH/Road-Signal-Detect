@@ -26,7 +26,7 @@ class PyTorchClassifier(BaseClassifier):
         device: str = "cpu",
         auto_fallback: bool = True,
         min_confidence: float = 0.30,
-        temperature: float = 1.30
+        temperature: float = 1.0
     ):
         self.model_path = model_path or os.path.join("weights", "classification", "classifier.pt")
         self.img_size = img_size
@@ -98,8 +98,8 @@ class PyTorchClassifier(BaseClassifier):
             else:
                 logits = out
 
-            # Pillar 3: Temperature Scaling (T ≈ 1.30) to soften probability distributions & prevent overconfidence
-            t = getattr(self, "temperature", 1.30)
+            # Pillar 3: Temperature Scaling (T ≈ 1.30 when requested) to soften probability distributions
+            t = getattr(self, "temperature", 1.0)
             if t > 0.0 and t != 1.0:
                 logits = logits / t
 
@@ -128,8 +128,8 @@ class PyTorchClassifier(BaseClassifier):
         margin = float(probs[top_indices[0]] - probs[top_indices[1]]) if len(top_indices) > 1 else 1.0
         is_ambiguous = bool(entropy > 2.30 or (margin < 0.15 and best_conf < 0.70))
 
-        # Drop or flag out-of-distribution noise / ambiguous guesses
-        if is_ambiguous and (entropy > 2.50 or best_conf < 0.40):
+        # Drop or flag genuine out-of-distribution noise (high entropy or low confidence)
+        if is_ambiguous and (entropy > 2.80 or best_conf < 0.30):
             return ClassificationResult(
                 class_id=-1,
                 class_name="Ambiguous / Out-of-Distribution",
