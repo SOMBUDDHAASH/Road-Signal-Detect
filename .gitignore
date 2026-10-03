@@ -18,10 +18,7 @@ data/archive/
 *.tar.gz
 
 # Model weights
-weights/*.pt
-weights/*.pth
-weights/*.onnx
-weights/*.engine
+yolov8n.pt
 !weights/.gitkeep
 
 # Output and temporary testing artifacts

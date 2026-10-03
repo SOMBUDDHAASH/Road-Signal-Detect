@@ -102,20 +102,51 @@ GFGgemini/
 │       ├── screen_capture.py        # High-FPS screen grabber for video playback
 │       ├── youtube.py               # YouTube stream handler via yt-dlp
 │       └── event_logger.py          # Local timestamp event logger & CSV/JSON exporter
-└── tests/
+├── modules/                         # Modular folders for teammates A, B, C
+│   ├── A_data_preprocessing/        # Member A (Yuvraj Singh) - Data & Augmentation
+│   │   ├── data_pipeline.py         # Resizing, normalization, augmentations, EDA
+│   │   ├── dataset_downloader.py    # GTSRB download & extraction utility
+│   │   ├── test_module_a.py         # Module A pytest suite
+│   │   └── README.md                # Member A swap guide
+│   ├── B_detection/                 # Member B (Shaurya Vaid) - YOLO Detection
+│   │   ├── detector.py              # YOLOv8 BaseDetector wrapper
+│   │   ├── train_yolo.py            # Ultralytics YOLO training pipeline
+│   │   ├── weights/best.pt          # Pretrained YOLOv8 detection model
+│   │   ├── test_module_b.py         # Module B pytest suite
+│   │   └── README.md                # Member B swap guide
+│   └── C_classification/            # Member C (Sneha Chakraborty) - GTSRB Classifier
+│       ├── classifier.py            # PyTorch BaseClassifier wrapper (99.2% Acc)
+│       ├── train_classifier.py     # Deep CNN training script
+│       ├── evaluate.py              # Benchmark evaluation metrics (Top-1, Top-5)
+│       ├── weights/classifier.pt    # Pretrained GTSRB classifier weights
+│       ├── test_module_c.py         # Module C pytest suite
+│       └── README.md                # Member C swap guide
+└── tests/                           # Complete test suite (37 passing tests)
     ├── test_contracts.py            # Schema & boundary unit tests
     ├── test_adapters.py             # Mock & heuristic adapter tests
     ├── test_pipeline.py             # End-to-end integration tests
     ├── test_tracking.py             # Temporal tracker and ADAS state tests
     ├── test_logger_and_custom.py    # Event logger and custom dataset tests
+    ├── test_benchmark_loader.py     # GTSRB Meta/Test loader tests
     └── test_api.py                  # FastAPI endpoint tests
 ```
 
 ---
 
+## 👥 Modular Team Architecture & Drop-in Guides
+
+This repository is organized so that **Members A, B, and C** can work in parallel without blocking each other:
+
+- **Member A (Yuvraj Singh)**: See [`modules/A_data_preprocessing/README.md`](file:///c:/Users/Sombuddha%20Ash/Downloads/GFGgemini/modules/A_data_preprocessing/README.md) to integrate custom CLAHE, augmentations, or dataset splitting.
+- **Member B (Shaurya Vaid)**: See [`modules/B_detection/README.md`](file:///c:/Users/Sombuddha%20Ash/Downloads/GFGgemini/modules/B_detection/README.md) to drop in fine-tuned YOLO `best.pt` weights or custom architectures.
+- **Member C (Sneha Chakraborty)**: See [`modules/C_classification/README.md`](file:///c:/Users/Sombuddha%20Ash/Downloads/GFGgemini/modules/C_classification/README.md) to drop in trained classification weights or evaluate Top-1/Top-5 accuracy.
+- **Member D (Sombuddha Ash - Integration Lead)**: Manages master pipeline (`src/pipeline.py`), tracking, video streams, HUD visualization, FastAPI microservice, and Streamlit user interface.
+
+---
+
 ## 🧪 Testing
 
-Run all 23 automated unit and integration tests:
+Run all 37 automated unit and integration tests:
 ```powershell
-python -m pytest tests/ -v
+python -m pytest tests/ modules/ -v
 ```
