@@ -292,35 +292,62 @@ def main():
 
                     h, w = frame.shape[:2]
 
-                    # If Center Reticle is enabled, also evaluate the center target region directly
+                    # Process raw frame through pipeline first
+                    result = pipeline.process_frame(frame, conf_threshold=conf_thresh)
+
+                    # If Center Reticle is enabled and no signs found by YOLO, evaluate center target box
                     if target_reticle:
                         box_size = int(min(h, w) * 0.45)
                         cx1 = (w - box_size) // 2
                         cy1 = (h - box_size) // 2
                         cx2 = cx1 + box_size
                         cy2 = cy1 + box_size
-
-                        # Crop center box
                         center_crop = frame[cy1:cy2, cx1:cx2]
-                        cls_res = pipeline.classifier.classify(center_crop)
 
-                        # Draw subtle targeting brackets
-                        reticle_color = (0, 255, 0) if (cls_res.class_id >= 0 and cls_res.confidence >= conf_thresh) else (200, 200, 200)
-                        cv2.rectangle(frame, (cx1, cy1), (cx2, cy2), reticle_color, 2, cv2.LINE_AA)
-                        bracket_len = 25
-                        cv2.line(frame, (cx1, cy1), (cx1 + bracket_len, cy1), reticle_color, 3, cv2.LINE_AA)
-                        cv2.line(frame, (cx1, cy1), (cx1, cy1 + bracket_len), reticle_color, 3, cv2.LINE_AA)
-                        cv2.line(frame, (cx2, cy1), (cx2 - bracket_len, cy1), reticle_color, 3, cv2.LINE_AA)
-                        cv2.line(frame, (cx2, cy1), (cx2, cy1 + bracket_len), reticle_color, 3, cv2.LINE_AA)
-                        cv2.line(frame, (cx1, cy2), (cx1 + bracket_len, cy2), reticle_color, 3, cv2.LINE_AA)
-                        cv2.line(frame, (cx1, cy2), (cx1, cy2 - bracket_len), reticle_color, 3, cv2.LINE_AA)
-                        cv2.line(frame, (cx2, cy2), (cx2 - bracket_len, cy2), reticle_color, 3, cv2.LINE_AA)
-                        cv2.line(frame, (cx2, cy2), (cx2, cy2 - bracket_len), reticle_color, 3, cv2.LINE_AA)
+                        # Check saturation & skin ratio to distinguish signs from human face / wall
+                        hsv = cv2.cvtColor(center_crop, cv2.COLOR_BGR2HSV)
+                        sat = float(np.mean(hsv[:, :, 1]))
+                        ycrcb = cv2.cvtColor(center_crop, cv2.COLOR_BGR2YCrCb)
+                        skin_mask = cv2.inRange(ycrcb, np.array([0, 133, 77]), np.array([255, 173, 127]))
+                        skin_ratio = cv2.countNonZero(skin_mask) / float(center_crop.shape[0] * center_crop.shape[1])
 
-                        if cls_res.class_id < 0 or cls_res.confidence < conf_thresh:
-                            cv2.putText(frame, "HOLD SIGN IN THIS BOX", (cx1 + 10, cy1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.50, (220, 220, 220), 1, cv2.LINE_AA)
+                        is_sign = False
+                        if sat >= 45.0 and skin_ratio < 0.22:
+                            cls_res = pipeline.classifier.classify(center_crop)
+                            if cls_res.class_id >= 0 and cls_res.confidence >= max(0.70, conf_thresh):
+                                is_sign = True
+                                # Highlight center reticle in green with label
+                                reticle_color = (0, 255, 0)
+                                cv2.rectangle(result.annotated_frame, (cx1, cy1), (cx2, cy2), reticle_color, 2, cv2.LINE_AA)
+                                cv2.putText(
+                                    result.annotated_frame,
+                                    f"HOLD: {cls_res.class_name} ({cls_res.confidence*100:.0f}%)",
+                                    (cx1 + 10, cy1 - 10),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, reticle_color, 2, cv2.LINE_AA
+                                )
+                                # Log detection if not already present
+                                from src.schema import PipelineDetection
+                                p_det = PipelineDetection(
+                                    detection=DetectionResult(bbox=BoundingBox(cx1, cy1, cx2, cy2), confidence=cls_res.confidence, detector_label="traffic_sign"),
+                                    classification=cls_res,
+                                    crop=center_crop
+                                )
+                                logger.log_detections([p_det])
 
-                    result = pipeline.process_frame(frame, conf_threshold=conf_thresh)
+                        if not is_sign:
+                            # Draw subtle grey targeting brackets
+                            reticle_color = (180, 180, 180)
+                            bracket_len = 25
+                            cv2.line(result.annotated_frame, (cx1, cy1), (cx1 + bracket_len, cy1), reticle_color, 2, cv2.LINE_AA)
+                            cv2.line(result.annotated_frame, (cx1, cy1), (cx1, cy1 + bracket_len), reticle_color, 2, cv2.LINE_AA)
+                            cv2.line(result.annotated_frame, (cx2, cy1), (cx2 - bracket_len, cy1), reticle_color, 2, cv2.LINE_AA)
+                            cv2.line(result.annotated_frame, (cx2, cy1), (cx2, cy1 + bracket_len), reticle_color, 2, cv2.LINE_AA)
+                            cv2.line(result.annotated_frame, (cx1, cy2), (cx1 + bracket_len, cy2), reticle_color, 2, cv2.LINE_AA)
+                            cv2.line(result.annotated_frame, (cx1, cy2), (cx1, cy2 - bracket_len), reticle_color, 2, cv2.LINE_AA)
+                            cv2.line(result.annotated_frame, (cx2, cy2), (cx2 - bracket_len, cy2), reticle_color, 2, cv2.LINE_AA)
+                            cv2.line(result.annotated_frame, (cx2, cy2), (cx2, cy2 - bracket_len), reticle_color, 2, cv2.LINE_AA)
+                            cv2.putText(result.annotated_frame, "HOLD SIGN IN THIS BOX", (cx1 + 10, cy1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1, cv2.LINE_AA)
+
                     logger.log_detections(result.detections)
 
                     st_video.image(cv2.cvtColor(result.annotated_frame, cv2.COLOR_BGR2RGB), use_container_width=True)

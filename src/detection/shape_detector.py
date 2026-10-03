@@ -107,15 +107,6 @@ class RobustTrafficSignDetector(BaseDetector):
                 if num_v in (3, 8) or circularity > 0.65:
                     candidates.append(BoundingBox(bx, by, bx + bw, by + bh))
 
-        # Strategy 3: Center Framing / Prominent Target ROI (when holding a sign up to the camera)
-        # If the user is holding a sign in front of the camera, check central 40% region
-        center_w = int(w * 0.40)
-        center_h = int(h * 0.40)
-        cx1 = (w - center_w) // 2
-        cy1 = (h - center_h) // 2
-        center_box = BoundingBox(cx1, cy1, cx1 + center_w, cy1 + center_h)
-        candidates.append(center_box)
-
         # Filter & Validate Candidates against Body/Background and Edge Density
         verified_detections: List[DetectionResult] = []
         seen_boxes = []

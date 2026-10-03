@@ -102,6 +102,15 @@ class TrafficSignPipeline:
         # Stage 1: Detection
         t_det_start = time.perf_counter()
         raw_detections: List[DetectionResult] = self.detector.detect(frame, conf_threshold=conf_threshold)
+
+        # If image is already a cropped sign sample (< 150px) and detector found nothing, evaluate whole crop
+        if not raw_detections and max(w, h) <= 150:
+            raw_detections = [DetectionResult(
+                bbox=BoundingBox(0, 0, w, h),
+                confidence=1.0,
+                detector_label="traffic_sign",
+                detector_class_id=0
+            )]
         det_latency_ms = (time.perf_counter() - t_det_start) * 1000.0
 
         # Stage 2: Cropping with safety clamping

@@ -69,22 +69,50 @@ class YOLODetector(BaseDetector):
         h, w = image.shape[:2]
         results = self.model.predict(source=image, conf=conf_threshold, verbose=False)
 
+        disallowed_classes = {
+            'person', 'human', 'face', 'body', 'cat', 'dog', 'horse', 'sheep', 'cow',
+            'elephant', 'bear', 'zebra', 'giraffe', 'backpack', 'umbrella', 'handbag',
+            'tie', 'suitcase', 'bottle', 'wine glass', 'cup', 'fork', 'knife', 'spoon',
+            'bowl', 'chair', 'couch', 'potted plant', 'bed', 'dining table', 'toilet',
+            'tv', 'laptop', 'mouse', 'remote', 'keyboard', 'cell phone', 'microwave',
+            'oven', 'toaster', 'sink', 'refrigerator', 'book', 'clock', 'vase', 'scissors'
+        }
+
         detections: List[DetectionResult] = []
         for r in results:
             boxes = r.boxes
+            if boxes is None or len(boxes) == 0:
+                continue
+
             for i in range(len(boxes)):
                 xyxy = boxes.xyxy[i].cpu().numpy()
                 conf = float(boxes.conf[i].cpu().numpy())
                 cls_id = int(boxes.cls[i].cpu().numpy())
+                cls_name = self.model.names.get(cls_id, "traffic_sign").lower()
+
+                # Guard 1: Reject person/body/everyday household classes
+                if any(dis in cls_name for dis in disallowed_classes):
+                    continue
 
                 bbox = BoundingBox(
                     int(xyxy[0]), int(xyxy[1]), int(xyxy[2]), int(xyxy[3])
                 ).clamp(w, h)
 
+                # Guard 2: Skip degenerate or oversized bounding boxes
+                if bbox.width < 12 or bbox.height < 12:
+                    continue
+                if bbox.width > (w * 0.70) or bbox.height > (h * 0.70):
+                    continue
+
+                # Guard 3: Aspect ratio check (road signs are roughly 1:1, triangles/circles/octagons)
+                aspect_ratio = bbox.width / max(1, bbox.height)
+                if aspect_ratio < 0.45 or aspect_ratio > 2.2:
+                    continue
+
                 detections.append(DetectionResult(
                     bbox=bbox,
                     confidence=conf,
-                    detector_label="traffic_sign",
+                    detector_label=self.model.names.get(cls_id, "traffic_sign"),
                     detector_class_id=cls_id
                 ))
 
