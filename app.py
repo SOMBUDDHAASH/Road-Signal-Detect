@@ -176,6 +176,10 @@ def main():
         img_path = os.path.join(sample_dir, chosen_file)
         frame = cv2.imread(img_path)
 
+        from src.dataset.benchmark_loader import BenchmarkDataLoader
+        bench_loader = BenchmarkDataLoader()
+        gt = bench_loader.get_ground_truth(chosen_file)
+
         if frame is not None:
             result = pipeline.process_frame(frame, conf_threshold=conf_thresh)
             logger.log_detections(result.detections)
@@ -187,6 +191,29 @@ def main():
             with col2:
                 st.subheader("🎯 Model Prediction & HUD")
                 st.image(cv2.cvtColor(result.annotated_frame, cv2.COLOR_BGR2RGB), use_container_width=True)
+
+            # Ground Truth vs Prediction Comparison Card
+            if gt is not None:
+                st.markdown("#### 📋 Benchmark Ground Truth Comparison (from `Test.csv` & `Meta.csv`)")
+                gt_col1, gt_col2, gt_col3 = st.columns(3)
+                gt_col1.markdown(f"**Ground Truth Label**:<br>`[{gt.class_id}] {gt.class_name}`", unsafe_allow_html=True)
+                gt_col1.caption(f"Category: **{gt.category}** | Shape ID: {gt.shape_id} | Color ID: {gt.color_id}")
+                gt_col2.markdown(f"**Ground Truth ROI Box**:<br>`({gt.roi_x1}, {gt.roi_y1}, {gt.roi_x2}, {gt.roi_y2})`", unsafe_allow_html=True)
+                gt_col2.caption(f"Resolution: {gt.width}x{gt.height} px")
+
+                pred_id = result.detections[0].classification.class_id if result.detections else -1
+                pred_name = result.detections[0].classification.class_name if result.detections else "None"
+                pred_conf = result.detections[0].classification.confidence if result.detections else 0.0
+
+                gt_col3.markdown(f"**Model Prediction**:<br>`[{pred_id}] {pred_name}`", unsafe_allow_html=True)
+                gt_col3.caption(f"Confidence: **{pred_conf*100:.1f}%**")
+
+                if pred_id == gt.class_id:
+                    st.success(f"✅ **EXACT BENCHMARK MATCH**: Model correctly recognized `{gt.class_name}` with {pred_conf*100:.1f}% confidence!")
+                elif pred_id >= 0:
+                    st.warning(f"⚠️ Predicted `{pred_name}` vs Ground Truth `{gt.class_name}`.")
+                else:
+                    st.info("ℹ️ Detection threshold filtered this crop. Adjust confidence threshold slider in sidebar.")
 
             # Telemetry Metrics
             m1, m2, m3, m4 = st.columns(4)

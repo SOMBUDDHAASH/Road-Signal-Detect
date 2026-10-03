@@ -8,7 +8,7 @@ import os
 import numpy as np
 import cv2
 
-from src.schema import ClassificationResult
+from src.schema import ClassificationResult, SignCategory
 from src.classification.base import BaseClassifier
 from src.gtsrb_classes import get_class_name, get_sign_category
 
