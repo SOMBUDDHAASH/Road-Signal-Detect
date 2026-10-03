@@ -143,23 +143,33 @@ class TrafficSignPipeline:
 
         # Stage 1: Detection (Primary GTSRB/YOLO Localization)
         t_det_start = time.perf_counter()
-        import inspect
-        sig = inspect.signature(self.detector.detect)
-        if "enable_stage2_proposals" in sig.parameters:
-            raw_detections: List[DetectionResult] = self.detector.detect(
-                frame, conf_threshold=conf_threshold, enable_stage2_proposals=use_stage2
-            )
-        else:
-            raw_detections: List[DetectionResult] = self.detector.detect(frame, conf_threshold=conf_threshold)
 
-        # If image is already a cropped sign sample (< 150px) and detector found nothing, evaluate whole crop
-        if not raw_detections and max(w, h) <= 150:
+        # If image is already an isolated sign sample crop (<= 160px), evaluate the whole crop directly
+        if max(w, h) <= 160:
             raw_detections = [DetectionResult(
                 bbox=BoundingBox(0, 0, w, h),
                 confidence=1.0,
                 detector_label="traffic_sign",
                 detector_class_id=0
             )]
+        else:
+            import inspect
+            sig = inspect.signature(self.detector.detect)
+            if "enable_stage2_proposals" in sig.parameters:
+                raw_detections = self.detector.detect(
+                    frame, conf_threshold=conf_threshold, enable_stage2_proposals=use_stage2
+                )
+            else:
+                raw_detections = self.detector.detect(frame, conf_threshold=conf_threshold)
+
+            # If scene detector found nothing but image is compact (<= 200px), evaluate whole crop as fallback
+            if not raw_detections and max(w, h) <= 200:
+                raw_detections = [DetectionResult(
+                    bbox=BoundingBox(0, 0, w, h),
+                    confidence=1.0,
+                    detector_label="traffic_sign",
+                    detector_class_id=0
+                )]
         det_latency_ms = (time.perf_counter() - t_det_start) * 1000.0
 
         # Stage 2: Cropping with safety clamping
@@ -220,9 +230,9 @@ class TrafficSignPipeline:
                 # and classifier is lower confidence or unclassified, trust detector!
                 if det.detector_label in YOLO_LABEL_TO_GTSRB and det.confidence >= 0.40:
                     yolo_cid, yolo_name, yolo_cat = YOLO_LABEL_TO_GTSRB[det.detector_label]
-                    # If YOLO predicted a speed limit but OCR found NO digits and confidence is moderate,
-                    # avoid false speed limit assignment on symbol prohibitory signs
-                    if yolo_name.startswith("Speed limit") and use_ocr and (ocr_res is None or ocr_res.detected_number is None) and det.confidence < 0.72:
+                    # If YOLO predicted a speed limit and classifier is uncertain (< 0.60), and OCR has no digits,
+                    # resolve conservatively
+                    if yolo_name.startswith("Speed limit") and cls_res.confidence < 0.60 and use_ocr and (ocr_res is None or ocr_res.detected_number is None) and det.confidence < 0.72:
                         cls_res = ClassificationResult(
                             class_id=15,
                             class_name="No vehicles / Motorcycles prohibited",

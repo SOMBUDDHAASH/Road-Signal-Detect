@@ -162,27 +162,48 @@ class SemanticPhysicalVerifier:
 
         physics = self.analyze_crop_physics(crop)
 
-        # 1. Negative Filter: Reject human bodies, face crops, and flat room backgrounds
-        if physics["skin_ratio"] > 0.35:
-            return None
-        if physics["lap_var"] < 12.0:
+        # 1. Negative Filter: Reject completely featureless flat crops (sky, blank walls)
+        if physics["lap_var"] < 8.0 and raw_confidence < 0.85:
             return None
 
-        sign_color_sum = physics["red_ratio"] + physics["blue_ratio"] + physics["yellow_ratio"]
-        # If crop lacks sign colors and has low confidence, reject
-        if sign_color_sum < 0.10 and raw_confidence < 0.65:
-            return None
+        # 2. Positive High-Confidence GTSRB Deep Learning Protection:
+        # If the GTSRB classifier is highly confident (>= 0.65), trust the trained CNN!
+        # Only adjust if there is unambiguous positive textual OCR confirmation.
+        if raw_class_id in GTSRB_CLASS_NAMES and raw_confidence >= 0.65:
+            # Positive OCR Word Confirmations
+            if ocr_word == "STOP" or (ocr_text and "STOP" in ocr_text):
+                return ClassificationResult(
+                    class_id=14,
+                    class_name="Stop",
+                    confidence=0.99,
+                    category=SignCategory.PROHIBITORY
+                )
+            if ocr_word == "YIELD" or (ocr_text and "YIELD" in ocr_text):
+                return ClassificationResult(
+                    class_id=13,
+                    class_name="Yield",
+                    confidence=0.98,
+                    category=SignCategory.OTHER
+                )
+            # Positive OCR Speed Limit Number Disambiguation
+            if ocr_number in RED_CIRCLE_SPEED_CLASSES and raw_class_id in [0, 1, 2, 3, 4, 5, 7, 8]:
+                speed_cid = RED_CIRCLE_SPEED_CLASSES[ocr_number]
+                return ClassificationResult(
+                    class_id=speed_cid,
+                    class_name=GTSRB_CLASS_NAMES[speed_cid],
+                    confidence=max(raw_confidence, 0.95),
+                    category=SignCategory.PROHIBITORY
+                )
 
-        # 1b. Direct High-Confidence GTSRB Stop Sign
-        if raw_class_id == 14 and raw_confidence >= 0.70 and physics["red_ratio"] >= 0.15:
+            # Accept the confident GTSRB CNN classification
             return ClassificationResult(
-                class_id=14,
-                class_name="Stop",
+                class_id=raw_class_id,
+                class_name=GTSRB_CLASS_NAMES[raw_class_id],
                 confidence=raw_confidence,
-                category=SignCategory.PROHIBITORY
+                category=GTSRB_CATEGORIES.get(raw_class_id, SignCategory.OTHER)
             )
 
-        # 2. OCR Stop Sign Override
+        # 3. Explicit OCR Overrides for Lower Confidence Crops
         if ocr_word == "STOP" or (ocr_text and "STOP" in ocr_text):
             return ClassificationResult(
                 class_id=14,
@@ -190,8 +211,6 @@ class SemanticPhysicalVerifier:
                 confidence=0.98,
                 category=SignCategory.PROHIBITORY
             )
-
-        # 3. OCR Yield Sign Override
         if ocr_word == "YIELD" or (ocr_text and "YIELD" in ocr_text):
             return ClassificationResult(
                 class_id=13,
@@ -200,38 +219,19 @@ class SemanticPhysicalVerifier:
                 category=SignCategory.OTHER
             )
 
-        # 4. Yellow Speed Advisory / MUTCD Override (e.g. Yellow 20 MPH)
+        # 4. Yellow Speed Advisory / Diamond Override
         if physics["yellow_ratio"] >= 0.28:
             if ocr_number in [15, 20, 25, 30, 35, 40, 45, 50] or (ocr_word in ["MPH", "M.P.H."]):
                 speed_val = ocr_number if ocr_number else 20
                 return ClassificationResult(
-                    class_id=0,  # Map to GTSRB Class 0 / Speed limit
+                    class_id=0,
                     class_name=f"Speed limit ({speed_val} M.P.H.)",
                     confidence=0.92,
                     category=SignCategory.PROHIBITORY
                 )
-            # If yellow diamond with general caution / priority
-            if raw_class_id not in [12, 18, 25]:
-                # Force to Priority road (12) or Road work (25) or General caution (18)
-                return ClassificationResult(
-                    class_id=12,
-                    class_name=GTSRB_CLASS_NAMES[12],
-                    confidence=0.75,
-                    category=GTSRB_CATEGORIES[12]
-                )
 
-        # 5. Blue Signs (Mandatory Circles vs. Accessible Service Rectangles)
+        # 5. Blue Mandatory Signs (Circles & Rectangles)
         if physics["blue_ratio"] >= 0.25:
-            # 5a. Vertical Rectangle with white symbol -> Accessible Service / Parking
-            if physics["aspect_ratio"] <= 0.82 and physics["white_ratio"] >= 0.12:
-                return ClassificationResult(
-                    class_id=38,
-                    class_name="Accessible Facility / Parking",
-                    confidence=0.92,
-                    category=SignCategory.OTHER
-                )
-
-            # 5b. Circular / Square Blue Mandatory (Roundabout, Ahead Only, Arrow Directions)
             if raw_probs is not None and len(raw_probs) == 43:
                 blue_probs = {cid: float(raw_probs[cid]) for cid in BLUE_MANDATORY_CLASSES}
                 best_cid = max(blue_probs, key=blue_probs.get)
@@ -240,27 +240,19 @@ class SemanticPhysicalVerifier:
                 return ClassificationResult(
                     class_id=best_cid,
                     class_name=GTSRB_CLASS_NAMES[best_cid],
-                    confidence=max(0.75, min(0.99, norm_conf)),
+                    confidence=max(0.70, min(0.99, norm_conf)),
                     category=SignCategory.MANDATORY
                 )
-            else:
-                if raw_class_id in BLUE_MANDATORY_CLASSES:
-                    return ClassificationResult(
-                        class_id=raw_class_id,
-                        class_name=GTSRB_CLASS_NAMES[raw_class_id],
-                        confidence=max(raw_confidence, 0.85),
-                        category=SignCategory.MANDATORY
-                    )
-                # Default circular blue sign
+            elif raw_class_id in BLUE_MANDATORY_CLASSES:
                 return ClassificationResult(
-                    class_id=40,
-                    class_name=GTSRB_CLASS_NAMES[40],
-                    confidence=0.85,
+                    class_id=raw_class_id,
+                    class_name=GTSRB_CLASS_NAMES[raw_class_id],
+                    confidence=max(raw_confidence, 0.80),
                     category=SignCategory.MANDATORY
                 )
 
-        # 6. Red Circle Sign Consistency Gate (No Entry, Stop, Speed Limits, Prohibitory)
-        if physics["red_ratio"] >= 0.22:
+        # 6. Red Circle Signs (No Entry, Speed Limits, Prohibitory)
+        if physics["red_ratio"] >= 0.15:
             # Check No Entry (horizontal white bar)
             if physics["has_horizontal_bar"] > 0.5:
                 return ClassificationResult(
@@ -270,16 +262,7 @@ class SemanticPhysicalVerifier:
                     category=SignCategory.PROHIBITORY
                 )
 
-            # Stop sign check (octagonal red or high red saturation)
-            if physics["red_ratio"] > 0.50 and raw_class_id == 14:
-                return ClassificationResult(
-                    class_id=14,
-                    class_name="Stop",
-                    confidence=max(raw_confidence, 0.92),
-                    category=SignCategory.PROHIBITORY
-                )
-
-            # Check if OCR found a speed limit number
+            # Speed limit number detected by OCR
             if ocr_number in RED_CIRCLE_SPEED_CLASSES:
                 speed_cid = RED_CIRCLE_SPEED_CLASSES[ocr_number]
                 return ClassificationResult(
@@ -289,54 +272,8 @@ class SemanticPhysicalVerifier:
                     category=SignCategory.PROHIBITORY
                 )
 
-            # If raw classifier or YOLO predicted speed limit but NO digits were found by OCR,
-            # this is a non-numeric prohibitory sign (e.g. Motorcycle / No vehicles)
-            if raw_class_id in [0, 1, 2, 3, 4, 5, 7, 8] and ocr_number is None:
-                return ClassificationResult(
-                    class_id=15,
-                    class_name="No vehicles / Motorcycles prohibited",
-                    confidence=0.85,
-                    category=SignCategory.PROHIBITORY
-                )
-
-        # 7. Red Triangle Danger Sign Consistency Gate
-        if raw_class_id in RED_TRIANGLE_DANGER_CLASSES:
-            if physics["red_ratio"] >= 0.10 or physics["yellow_ratio"] >= 0.25:
-                return ClassificationResult(
-                    class_id=raw_class_id,
-                    class_name=GTSRB_CLASS_NAMES.get(raw_class_id, "Danger"),
-                    confidence=raw_confidence,
-                    category=SignCategory.DANGER
-                )
-            else:
-                # Lacks red/yellow danger coloring -> Reject
-                return None
-
-        # 8. Accessible Parking / Facility Check
-        if physics["blue_ratio"] >= 0.40 and physics["white_ratio"] >= 0.15:
-            return ClassificationResult(
-                class_id=38,
-                class_name="Accessible Facility / Parking",
-                confidence=0.88,
-                category=SignCategory.OTHER
-            )
-
-        # 9. Strict Color Signature Presence:
-        # A road sign MUST exhibit clear presence of red, blue, or yellow
-        if sign_color_sum < 0.15:
-            # Derestriction classes (6, 32, 41, 42) are white/grey with black slashes
-            if raw_class_id in [6, 32, 41, 42] and physics["white_ratio"] >= 0.45:
-                return ClassificationResult(
-                    class_id=raw_class_id,
-                    class_name=GTSRB_CLASS_NAMES[raw_class_id],
-                    confidence=raw_confidence,
-                    category=SignCategory.OTHER
-                )
-            # Otherwise, lack of road sign color indicates background/person/room noise -> Reject
-            return None
-
-        # 10. Fallback to raw prediction if confidence is sufficient and valid
-        if raw_class_id in GTSRB_CLASS_NAMES and raw_confidence >= 0.35:
+        # 7. Fallback to raw prediction if valid GTSRB class
+        if raw_class_id in GTSRB_CLASS_NAMES and raw_confidence >= 0.25:
             return ClassificationResult(
                 class_id=raw_class_id,
                 class_name=GTSRB_CLASS_NAMES[raw_class_id],

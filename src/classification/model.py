@@ -97,11 +97,7 @@ class PyTorchClassifier(BaseClassifier):
         best_id = int(top_indices[0])
         best_conf = float(probs[best_id])
 
-        from src.classification.semantic_verifier import get_semantic_verifier
-        verifier = get_semantic_verifier()
-        verified = verifier.verify_and_correct(crop, best_id, best_conf, raw_probs=probs)
-
-        if verified is None or verified.class_id < 0 or verified.confidence < self.min_confidence:
+        if best_conf < self.min_confidence:
             return ClassificationResult(
                 class_id=-1,
                 class_name="Unrecognized / Background",
@@ -114,8 +110,15 @@ class PyTorchClassifier(BaseClassifier):
             cid = int(top_indices[i])
             top_k.append((cid, get_class_name(cid), float(probs[cid])))
 
-        verified.top_k = top_k
-        return verified
+        result = ClassificationResult(
+            class_id=best_id,
+            class_name=get_class_name(best_id),
+            confidence=best_conf,
+            category=get_sign_category(best_id),
+            top_k=top_k
+        )
+        result.probs = probs
+        return result
 
 
 def load_classifier(model_path: str, **kwargs) -> BaseClassifier:

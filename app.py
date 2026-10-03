@@ -511,45 +511,135 @@ def main():
             st.warning("No sample files found in data/samples. Extracting...")
             return
 
-        c_filter1, c_filter2 = st.columns([1, 2])
-        with c_filter1:
-            category_filter = st.selectbox(
-                "Filter by Sign Category",
-                ["All Categories (43 Classes)", "Prohibitory (Speed Limits)", "Danger / Warning", "Mandatory", "Other / Priority"]
-            )
-
-        # Filter available samples based on category
-        available_files = []
+        # Separate canonical class samples (class_XX_sample_Y.png) and general test samples (00000.png)
+        canonical_samples = []
+        general_samples = []
         for f in sample_files:
             bname = os.path.basename(f)
-            gt = bench_loader.get_ground_truth(bname)
-            if not gt:
-                available_files.append(bname)
-                continue
-            cat = gt.category.lower()
-            if category_filter.startswith("Prohibitory") and "prohibitory" not in cat:
-                continue
-            elif category_filter.startswith("Danger") and "danger" not in cat:
-                continue
-            elif category_filter.startswith("Mandatory") and "mandatory" not in cat:
-                continue
-            elif category_filter.startswith("Other") and "other" not in cat:
-                continue
-            available_files.append(bname)
+            if bname.startswith("class_") and "_sample_" in bname:
+                try:
+                    parts = bname.split("_")
+                    cid = int(parts[1])
+                    sidx = int(parts[3].split(".")[0])
+                    canonical_samples.append((cid, sidx, bname))
+                except Exception:
+                    general_samples.append(bname)
+            else:
+                general_samples.append(bname)
 
-        if not available_files:
-            available_files = [os.path.basename(f) for f in sample_files]
+        canonical_samples.sort(key=lambda x: (x[0], x[1]))
+        general_samples.sort()
 
-        with c_filter2:
-            chosen_file = st.selectbox("Select Test Benchmark Sample", available_files)
+        explorer_mode = st.radio(
+            "Benchmark Exploration Mode",
+            ["Canonical Benchmark Classes (0 - 42)", "Raw Test Set Slices (Test.csv)", "⚡ Batch Benchmark Evaluation Suite"],
+            horizontal=True
+        )
 
-        img_path = os.path.join(sample_dir, chosen_file)
-        frame = cv2.imread(img_path)
-        gt = bench_loader.get_ground_truth(chosen_file)
+        chosen_file = None
 
-        if frame is not None:
-            result = pipeline.process_frame(frame, conf_threshold=conf_thresh, is_video=False)
-            logger.log_detections(result.detections)
+        if explorer_mode.startswith("Canonical"):
+            c_filter1, c_filter2, c_filter3 = st.columns([1.2, 2.2, 1])
+            with c_filter1:
+                category_filter = st.selectbox(
+                    "Filter by Sign Category",
+                    ["All Categories (43 Classes)", "Prohibitory (Speed Limits)", "Danger / Warning", "Mandatory", "Other / Priority"]
+                )
+
+            # Filter matching class IDs
+            matching_cids = []
+            for cid in range(43):
+                cat = get_sign_category(cid).value.lower()
+                if category_filter.startswith("Prohibitory") and "prohibitory" not in cat:
+                    continue
+                elif category_filter.startswith("Danger") and "danger" not in cat:
+                    continue
+                elif category_filter.startswith("Mandatory") and "mandatory" not in cat:
+                    continue
+                elif category_filter.startswith("Other") and "other" not in cat:
+                    continue
+                matching_cids.append(cid)
+
+            if not matching_cids:
+                matching_cids = list(range(43))
+
+            with c_filter2:
+                selected_cid = st.selectbox(
+                    "Select Traffic Sign Class (0 - 42)",
+                    matching_cids,
+                    format_func=lambda cid: f"[{cid:02d}] {GTSRB_CLASSES[cid]}"
+                )
+
+            with c_filter3:
+                sample_var = st.radio("Sample Variant", [1, 2, 3], horizontal=True)
+
+            candidate_name = f"class_{selected_cid:02d}_sample_{sample_var}.png"
+            if os.path.exists(os.path.join(sample_dir, candidate_name)):
+                chosen_file = candidate_name
+            else:
+                chosen_file = f"class_{selected_cid:02d}_sample_1.png"
+
+        elif explorer_mode.startswith("Raw"):
+            st.caption("Inspect uncurated test set slices directly from Test.csv (00000.png - 00029.png).")
+            if general_samples:
+                chosen_file = st.selectbox(
+                    "Select Test.csv Image",
+                    general_samples,
+                    format_func=lambda f: f"{f} — Ground Truth: [{bench_loader.get_ground_truth(f).class_id if bench_loader.get_ground_truth(f) else '?'}] {bench_loader.get_ground_truth(f).class_name if bench_loader.get_ground_truth(f) else 'Unknown'}"
+                )
+            else:
+                st.info("No raw test slices found in data/samples.")
+
+        else:
+            # Full Batch Benchmark Evaluation Suite
+            st.markdown("##### ⚡ Automated 43-Class Benchmark Evaluation")
+            st.caption("Execute an automated batch evaluation across all 129 canonical benchmark samples with active perception pipeline.")
+            if st.button("🚀 Run Full 43-Class Evaluation", use_container_width=True):
+                with st.spinner("Evaluating all 43 classes against active pipeline..."):
+                    suite_files = sorted(glob.glob(os.path.join(sample_dir, "class_*.png")))
+                    suite_total = len(suite_files)
+                    suite_correct = 0
+                    t_suite_start = time.perf_counter()
+                    suite_results = []
+
+                    for sf in suite_files:
+                        s_gt = bench_loader.get_ground_truth(sf)
+                        s_img = cv2.imread(sf)
+                        s_res = pipeline.process_frame(s_img, conf_threshold=conf_thresh, is_video=False)
+                        s_pred_id = s_res.detections[0].classification.class_id if s_res.detections else -1
+                        s_pred_name = s_res.detections[0].classification.class_name if s_res.detections else "Unrecognized"
+                        s_conf = s_res.detections[0].classification.confidence if s_res.detections else 0.0
+                        is_match = (s_pred_id == s_gt.class_id) if s_gt else False
+                        if is_match:
+                            suite_correct += 1
+                        suite_results.append({
+                            "File": os.path.basename(sf),
+                            "GT Class": f"[{s_gt.class_id}] {s_gt.class_name}" if s_gt else "N/A",
+                            "Category": s_gt.category if s_gt else "N/A",
+                            "Prediction": f"[{s_pred_id}] {s_pred_name}",
+                            "Confidence": f"{s_conf*100:.1f}%",
+                            "Status": "✅ Pass" if is_match else "❌ Fail"
+                        })
+                    suite_dur = (time.perf_counter() - t_suite_start) * 1000.0
+                    acc = (suite_correct / max(1, suite_total)) * 100.0
+
+                    m_acc, m_cnt, m_dur = st.columns(3)
+                    m_acc.metric("Benchmark Accuracy", f"{acc:.1f}%")
+                    m_cnt.metric("Passed / Total", f"{suite_correct} / {suite_total}")
+                    m_dur.metric("Batch Execution Time", f"{suite_dur:.0f} ms ({suite_dur/suite_total:.1f} ms/sample)")
+
+                    import pandas as pd
+                    st.dataframe(pd.DataFrame(suite_results), use_container_width=True)
+            chosen_file = None
+
+        if chosen_file:
+            img_path = os.path.join(sample_dir, chosen_file)
+            frame = cv2.imread(img_path)
+            gt = bench_loader.get_ground_truth(chosen_file)
+
+            if frame is not None:
+                result = pipeline.process_frame(frame, conf_threshold=conf_thresh, is_video=False)
+                logger.log_detections(result.detections)
 
             col1, col2, col3 = st.columns([1, 2, 2])
             with col1:
