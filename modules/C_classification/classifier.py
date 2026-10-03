@@ -53,10 +53,31 @@ class StandaloneGTSRBClassifier(BaseClassifier):
         self.device = device
         self.min_confidence = min_confidence
         self.model = None
+        self._tf_classifier = None
         self._load_model()
 
     def _load_model(self):
+        # Support Member C's TensorFlow / Keras (.keras / .h5) format
+        if str(self.model_path).endswith((".keras", ".h5")):
+            from src.classification.tf_classifier import TensorFlowClassifier
+            self._tf_classifier = TensorFlowClassifier(
+                model_path=str(self.model_path),
+                img_size=self.img_size,
+                color_mode="bgr",
+                auto_fallback=True,
+                min_confidence=self.min_confidence
+            )
+            print(f"[Info] TensorFlow/Keras classifier loaded from: {self.model_path}")
+            return
+
         if not self.model_path.exists():
+            # Check if .keras exists instead
+            keras_alt = self.model_path.with_suffix(".keras")
+            if keras_alt.exists():
+                from src.classification.tf_classifier import TensorFlowClassifier
+                self._tf_classifier = TensorFlowClassifier(model_path=str(keras_alt), min_confidence=self.min_confidence)
+                print(f"[Info] Found alternate TensorFlow/Keras model: {keras_alt}")
+                return
             print(f"[Warning] Classifier weights not found at: {self.model_path}")
             return
 
@@ -75,7 +96,7 @@ class StandaloneGTSRBClassifier(BaseClassifier):
 
     @property
     def is_ready(self) -> bool:
-        return self.model is not None
+        return self.model is not None or self._tf_classifier is not None
 
     def preprocess(self, crop: np.ndarray) -> np.ndarray:
         """
@@ -94,6 +115,9 @@ class StandaloneGTSRBClassifier(BaseClassifier):
     def classify(self, crop: np.ndarray) -> ClassificationResult:
         if crop is None or crop.size == 0:
             return ClassificationResult(class_id=-1, class_name="Invalid Crop", confidence=0.0)
+
+        if self._tf_classifier is not None:
+            return self._tf_classifier.classify(crop)
 
         if not self.is_ready:
             from src.classification.mock import ColorHeuristicClassifier

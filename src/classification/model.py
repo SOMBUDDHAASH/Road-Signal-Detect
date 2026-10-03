@@ -118,3 +118,19 @@ class PyTorchClassifier(BaseClassifier):
             category=get_sign_category(best_id),
             top_k=top_k
         )
+
+
+def load_classifier(model_path: str, **kwargs) -> BaseClassifier:
+    """
+    Intelligently instantiate the appropriate classifier based on model file format:
+    - .keras / .h5 -> TensorFlowClassifier (Member C format, BGR ordering)
+    - .pt / .pth -> PyTorchClassifier
+    - Other -> PyTorchClassifier with auto-fallback
+    """
+    ext = os.path.splitext(model_path)[1].lower()
+    if ext in [".keras", ".h5"]:
+        from src.classification.tf_classifier import TensorFlowClassifier
+        return TensorFlowClassifier(model_path=model_path, **kwargs)
+    else:
+        return PyTorchClassifier(model_path=model_path, **kwargs)
+

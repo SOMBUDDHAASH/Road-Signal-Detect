@@ -261,7 +261,11 @@ def get_active_pipeline(
 
     # Classifier selection
     if classifier_choice == "Custom Uploaded Classifier" and custom_cls_path and os.path.exists(custom_cls_path):
-        classifier = PyTorchClassifier(model_path=custom_cls_path, auto_fallback=True)
+        from src.classification.model import load_classifier
+        classifier = load_classifier(custom_cls_path, auto_fallback=True)
+    elif classifier_choice.startswith("TensorFlow / Keras"):
+        from src.classification.tf_classifier import TensorFlowClassifier
+        classifier = TensorFlowClassifier(auto_fallback=True)
     elif classifier_choice.startswith("PyTorch GTSRB CNN"):
         classifier = PyTorchClassifier(model_path=os.path.join("weights", "classification", "classifier.pt"), auto_fallback=True)
     elif classifier_choice.startswith("Color Heuristic"):
@@ -364,20 +368,22 @@ def main():
     # 2. Classifier Switcher
     classifier_options = [
         "PyTorch GTSRB CNN (classifier.pt - 99.2% Acc)",
+        "TensorFlow / Keras CNN (traffic_sign_model.keras - Member C)",
         "Color Heuristic Baseline",
         "Custom Uploaded Classifier"
     ]
     chosen_classifier = st.sidebar.selectbox("Active Classifier Model", classifier_options, index=0)
 
     if chosen_classifier == "Custom Uploaded Classifier":
-        uploaded_cls = st.sidebar.file_uploader("Upload Classifier (.pt)", type=["pt", "onnx"], key="cls_uploader")
+        uploaded_cls = st.sidebar.file_uploader("Upload Classifier (.pt, .onnx, .keras, .h5)", type=["pt", "onnx", "keras", "h5"], key="cls_uploader")
         if uploaded_cls:
-            save_path = os.path.join("weights", "classification", "custom_uploaded_classifier.pt")
+            ext = os.path.splitext(uploaded_cls.name)[1].lower()
+            save_path = os.path.join("weights", "classification", f"custom_uploaded_classifier{ext}")
             os.makedirs(os.path.dirname(save_path), exist_ok=True)
             with open(save_path, "wb") as f:
                 f.write(uploaded_cls.getbuffer())
             st.session_state.custom_classifier_path = save_path
-            st.sidebar.success("✅ Custom Classifier Activated!")
+            st.sidebar.success(f"✅ Custom Classifier ({ext}) Activated!")
 
     conf_thresh = st.sidebar.slider("Confidence Gate", min_value=0.10, max_value=0.95, value=0.35, step=0.05)
     padding_ratio = st.sidebar.slider("Crop Margin Ratio", min_value=0.0, max_value=0.20, value=0.05, step=0.02)

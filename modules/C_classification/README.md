@@ -6,90 +6,100 @@
 
 ---
 
-## 1. Overview & Current Reference Implementation
+## 1. Overview & Dual Framework Support (TensorFlow/Keras & PyTorch)
 
-Member D (Integration Lead) has provided a fully operational, high-accuracy baseline in this directory:
-- `classifier.py`: `StandaloneGTSRBClassifier` class implementing `BaseClassifier`. Handles input cropping, 32x32 resizing, BGR-to-RGB conversion, normalization, inference, top-k ranking, and out-of-distribution / background rejection (`min_confidence=0.65`).
-- `train_classifier.py`: Complete PyTorch CNN training routine that trains on GTSRB 43 classes and exports a deployable TorchScript model.
-- `evaluate.py`: Benchmark evaluation utility calculating Top-1 accuracy, Top-5 accuracy, and per-category precision/recall against GTSRB benchmark samples.
-- `weights/classifier.pt`: Working pretrained CNN model trained on GTSRB with **99.22% validation accuracy**.
-- `test_module_c.py`: Pytest test suite testing contracts, input dimensions, and edge cases.
+Member D (Integration Lead) has built full **dual-framework support** into the platform:
+* **TensorFlow / Keras**: Native support for Member C's `traffic_sign_model.keras` or `.h5` models via `TensorFlowClassifier`.
+* **PyTorch / TorchScript**: Support for `.pt` / `.pth` models via `PyTorchClassifier`.
+
+You **do NOT need to rewrite your CNN in PyTorch**. The integration layer automatically recognizes `.keras` models and loads them with your exact training preprocessing:
+
+| Framework | File Format | Adapter Class | Color Space | Input Resolution |
+| :--- | :--- | :--- | :--- | :--- |
+| **TensorFlow / Keras** | `traffic_sign_model.keras` | `TensorFlowClassifier` | **Native BGR** (OpenCV) | $32 \times 32$, normalized `/ 255.0` |
+| **PyTorch** | `classifier.pt` | `PyTorchClassifier` | RGB | $32 \times 32$, normalized `/ 255.0` |
 
 ---
 
-## 2. API Contract (What Member D's Pipeline Expects)
+## 2. Accuracy Benchmark Metrics
 
-Your classifier must conform to `BaseClassifier` from `src.classification.base`:
+* **Member C Model Performance (TensorFlow CNN)**:
+  * Random held-out split: **99.34%**
+  * Official GTSRB test set: **95.20%**
+  * ROI evaluation: **87.92%**
+* **Reference PyTorch Model**: 99.22% validation accuracy.
+
+---
+
+## 3. Important Preprocessing Detail: BGR Channel Ordering
+
+Member C's training script loaded images using:
 ```python
-from src.classification.base import BaseClassifier
-from src.schema import ClassificationResult, SignCategory
-
-class YourClassifier(BaseClassifier):
-    def classify(self, crop: np.ndarray) -> ClassificationResult:
-        """
-        Args:
-            crop: BGR numpy uint8 image patch of the detected sign (H, W, 3).
-        Returns:
-            ClassificationResult containing:
-              - class_id: int (0 to 42, or -1 if non-sign/background)
-              - class_name: str (human-readable sign name from GTSRB)
-              - confidence: float (0.0 to 1.0)
-              - category: SignCategory (PROHIBITORY, DANGER, MANDATORY, OTHER)
-              - top_k: Optional list of (class_id, class_name, confidence)
-        """
+image = cv2.imread(image_path)
+image = cv2.resize(image, (32, 32))
+X = X.astype("float32") / 255.0
 ```
+Notice that OpenCV `imread` returns **BGR** format. Member C did **not** convert to RGB during training.
+Therefore, `TensorFlowClassifier` uses `color_mode="bgr"` by default, feeding your CNN the exact color channels it learned during training.
 
 ---
 
-## 3. Step-by-Step Instructions: How to Swap In Your Own Model
+## 4. How to Drop In Your TensorFlow Model (`.keras`)
 
-### Option A: Direct Weights Drop-in (Easiest)
-If you trained a CNN, ResNet, MobileNetV3, or Vision Transformer:
-1. Export your model as a TorchScript model (`torch.jit.trace` or `torch.jit.script`) or standard PyTorch state dict.
-2. Save or copy your weights file to:
-   - `modules/C_classification/weights/classifier.pt`
-   - `weights/classification/classifier.pt`
-3. Run the evaluation script to verify accuracy:
-   ```bash
-   python modules/C_classification/evaluate.py --samples 50
-   ```
-4. Run the module unit tests:
-   ```bash
-   python -m pytest modules/C_classification/test_module_c.py -v
-   ```
+### Step 1: Place Your Model File
+Copy your trained model to either:
+* `models/traffic_sign_model.keras`
+* `weights/classification/traffic_sign_model.keras`
 
-### Option B: Custom Neural Network Architecture
-If your model requires custom preprocessing (e.g. 48x48 resolution, CLAHE, or specific normalization tensors):
-1. Open `modules/C_classification/classifier.py`.
-2. Update `preprocess(self, crop)` to match your architecture's requirements.
-3. Update `classify(self, crop)` if your logits require custom calibration.
+*(Or upload it directly through the Streamlit web dashboard in the sidebar under **Model & Weights Engine**).*
 
----
-
-## 4. How to Train Your Model Using `train_classifier.py`
-
-You can train or retrain your classifier with:
+### Step 2: Test Single-Image Prediction
+Run the interactive prediction script:
 ```bash
-python modules/C_classification/train_classifier.py --epochs 10 --batch-size 64 --lr 0.0015 --samples 150
+python modules/C_classification/predict.py data/samples/class_14_sample_1.png
 ```
-Upon completion, the trained model is automatically saved to both `modules/C_classification/weights/classifier.pt` and `weights/classification/classifier.pt`.
+Or interactively:
+```bash
+python modules/C_classification/predict.py
+# Enter the path of a traffic sign image: data/Train/14/00014_00000_00003.png
+# Prediction: Predicted Class: 14 (Stop) Confidence: 100.0 %
+```
+
+### Step 3: Use the Direct Python Interface
+You or Member D can import the function anywhere:
+```python
+from modules.C_classification.predict import predict_sign
+
+predicted_class, confidence = predict_sign("data/samples/class_14_sample_1.png")
+print(f"Class: {predicted_class}, Conf: {confidence:.2%}")
+```
 
 ---
 
-## 5. Verification & Submission
+## 5. Folder-Based Dataset Loader (`data_loader.py`)
 
-1. **Run tests:**
-   ```bash
-   python -m pytest modules/C_classification/test_module_c.py -v
-   python -m pytest tests/test_classification.py -v
-   ```
-2. **Launch Streamlit Dashboard to verify predictions:**
-   ```bash
-   streamlit run app.py
-   ```
-3. **Commit your changes:**
-   ```bash
-   git add modules/C_classification/
-   git commit -m "feat(classification): integrate Member C trained classifier"
-   git push origin feature/classification
-   ```
+If you want to reload or train directly from class folders (`Train/0/`, `Train/1/`, ... `Train/42/`):
+```python
+from modules.C_classification.data_loader import load_data
+
+X_train, y_train = load_data("data/Train")
+print("Images shape:", X_train.shape)  # (N, 32, 32, 3) in float32
+print("Labels shape:", y_train.shape)  # (N,) in int64
+```
+
+---
+
+## 6. Verification & Automated Tests
+
+Run the test suite to verify your classifier integration:
+```bash
+python -m pytest tests/test_member_c_compatibility.py -v
+python -m pytest modules/C_classification/test_module_c.py -v
+```
+
+Launch the Streamlit dashboard to test live in the browser:
+```bash
+streamlit run app.py
+```
+Select **TensorFlow / Keras CNN (traffic_sign_model.keras - Member C)** in the sidebar!
+
