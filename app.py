@@ -124,7 +124,7 @@ def main():
     selected_mode_label = st.sidebar.selectbox("Model & Pipeline Mode", list(mode_options.keys()), index=0)
     mode = mode_options[selected_mode_label]
 
-    conf_thresh = st.sidebar.slider("Confidence Threshold", min_value=0.10, max_value=0.95, value=0.45, step=0.05)
+    conf_thresh = st.sidebar.slider("Confidence Threshold", min_value=0.10, max_value=0.95, value=0.60, step=0.05)
     padding_ratio = st.sidebar.slider("Crop Margin Padding", min_value=0.0, max_value=0.20, value=0.05, step=0.02)
 
     # Teammate status indicators
@@ -235,7 +235,12 @@ def main():
         st.subheader("📹 Option 3: Continuous Real-Time Video Testing (Camera / Webcam)")
         st.write("Connect to your webcam or vehicle dashcam for real-time continuous detection, temporal tracking, and ADAS HUD.")
 
-        cam_idx = st.number_input("Camera Index (0 for primary webcam)", min_value=0, max_value=5, value=0)
+        col_c1, col_c2 = st.columns([1, 2])
+        with col_c1:
+            cam_idx = st.number_input("Camera Index (0 for primary webcam)", min_value=0, max_value=5, value=0)
+        with col_c2:
+            target_reticle = st.checkbox("🎯 Center Sign Focus Mode (Recommended when holding phone/paper sign to camera)", value=True)
+
         run_cam = st.toggle("▶️ Start Live Camera Stream", value=False)
 
         if run_cam:
@@ -257,6 +262,36 @@ def main():
                     ret, frame = cap.read()
                     if not ret or frame is None:
                         break
+
+                    h, w = frame.shape[:2]
+
+                    # If Center Reticle is enabled, also evaluate the center target region directly
+                    if target_reticle:
+                        box_size = int(min(h, w) * 0.45)
+                        cx1 = (w - box_size) // 2
+                        cy1 = (h - box_size) // 2
+                        cx2 = cx1 + box_size
+                        cy2 = cy1 + box_size
+
+                        # Crop center box
+                        center_crop = frame[cy1:cy2, cx1:cx2]
+                        cls_res = pipeline.classifier.classify(center_crop)
+
+                        # Draw subtle targeting brackets
+                        reticle_color = (0, 255, 0) if (cls_res.class_id >= 0 and cls_res.confidence >= conf_thresh) else (200, 200, 200)
+                        cv2.rectangle(frame, (cx1, cy1), (cx2, cy2), reticle_color, 2, cv2.LINE_AA)
+                        bracket_len = 25
+                        cv2.line(frame, (cx1, cy1), (cx1 + bracket_len, cy1), reticle_color, 3, cv2.LINE_AA)
+                        cv2.line(frame, (cx1, cy1), (cx1, cy1 + bracket_len), reticle_color, 3, cv2.LINE_AA)
+                        cv2.line(frame, (cx2, cy1), (cx2 - bracket_len, cy1), reticle_color, 3, cv2.LINE_AA)
+                        cv2.line(frame, (cx2, cy1), (cx2, cy1 + bracket_len), reticle_color, 3, cv2.LINE_AA)
+                        cv2.line(frame, (cx1, cy2), (cx1 + bracket_len, cy2), reticle_color, 3, cv2.LINE_AA)
+                        cv2.line(frame, (cx1, cy2), (cx1, cy2 - bracket_len), reticle_color, 3, cv2.LINE_AA)
+                        cv2.line(frame, (cx2, cy2), (cx2 - bracket_len, cy2), reticle_color, 3, cv2.LINE_AA)
+                        cv2.line(frame, (cx2, cy2), (cx2, cy2 - bracket_len), reticle_color, 3, cv2.LINE_AA)
+
+                        if cls_res.class_id < 0 or cls_res.confidence < conf_thresh:
+                            cv2.putText(frame, "HOLD SIGN IN THIS BOX", (cx1 + 10, cy1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.50, (220, 220, 220), 1, cv2.LINE_AA)
 
                     result = pipeline.process_frame(frame, conf_threshold=conf_thresh)
                     logger.log_detections(result.detections)

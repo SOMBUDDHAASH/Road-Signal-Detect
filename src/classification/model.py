@@ -24,12 +24,14 @@ class PyTorchClassifier(BaseClassifier):
         model_path: Optional[str] = None,
         img_size: int = 32,
         device: str = "cpu",
-        auto_fallback: bool = True
+        auto_fallback: bool = True,
+        min_confidence: float = 0.65
     ):
         self.model_path = model_path or os.path.join("weights", "classification", "classifier.pt")
         self.img_size = img_size
         self.device = device
         self.auto_fallback = auto_fallback
+        self.min_confidence = min_confidence
         self.fallback_classifier = None
         self.model = None
         self._load_model()
@@ -94,6 +96,15 @@ class PyTorchClassifier(BaseClassifier):
         top_indices = np.argsort(probs)[::-1]
         best_id = int(top_indices[0])
         best_conf = float(probs[best_id])
+
+        # Strict Out-of-Distribution / Background rejection
+        if best_conf < self.min_confidence:
+            return ClassificationResult(
+                class_id=-1,
+                class_name="Unrecognized / Background",
+                confidence=best_conf,
+                category=SignCategory.OTHER
+            )
 
         top_k = []
         for i in range(min(5, len(top_indices))):

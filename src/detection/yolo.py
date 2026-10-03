@@ -29,8 +29,8 @@ class YOLODetector(BaseDetector):
     def _load_model(self):
         if not os.path.exists(self.model_path):
             if self.auto_fallback:
-                from src.detection.mock import ColorContourDetector
-                self.fallback_detector = ColorContourDetector()
+                from src.detection.shape_detector import RobustTrafficSignDetector
+                self.fallback_detector = RobustTrafficSignDetector()
             return
 
         try:
@@ -38,13 +38,13 @@ class YOLODetector(BaseDetector):
             self.model = YOLO(self.model_path)
         except ImportError:
             if self.auto_fallback:
-                from src.detection.mock import ColorContourDetector
-                self.fallback_detector = ColorContourDetector()
+                from src.detection.shape_detector import RobustTrafficSignDetector
+                self.fallback_detector = RobustTrafficSignDetector()
         except Exception as e:
             print(f"[Warning] Failed to load YOLO model from {self.model_path}: {e}")
             if self.auto_fallback:
-                from src.detection.mock import ColorContourDetector
-                self.fallback_detector = ColorContourDetector()
+                from src.detection.shape_detector import RobustTrafficSignDetector
+                self.fallback_detector = RobustTrafficSignDetector()
 
     @property
     def is_ready(self) -> bool:
@@ -57,7 +57,7 @@ class YOLODetector(BaseDetector):
         if not self.is_ready:
             if self.auto_fallback and self.fallback_detector is not None:
                 if not self._warned:
-                    print(f"[Info] YOLO weights not found at '{self.model_path}'. Automatically using ColorContourDetector fallback.")
+                    print(f"[Info] YOLO weights not found at '{self.model_path}'. Automatically using RobustTrafficSignDetector fallback.")
                     self._warned = True
                 return self.fallback_detector.detect(image, conf_threshold=conf_threshold)
 

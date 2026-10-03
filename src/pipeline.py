@@ -68,7 +68,8 @@ class TrafficSignPipeline:
             detector = kwargs.get("detector") or MockDetector()
             classifier = kwargs.get("classifier") or MockClassifier()
         elif mode == "heuristic":
-            detector = kwargs.get("detector") or ColorContourDetector()
+            from src.detection.shape_detector import RobustTrafficSignDetector
+            detector = kwargs.get("detector") or RobustTrafficSignDetector()
             classifier = kwargs.get("classifier") or ColorHeuristicClassifier()
         elif mode == "production":
             from src.detection.yolo import YOLODetector
@@ -126,11 +127,13 @@ class TrafficSignPipeline:
             # Batch classification if supported, else sequential
             cls_results: List[ClassificationResult] = self.classifier.classify_batch(valid_crops)
             for det, cls_res, crop in zip(valid_detections, cls_results, valid_crops):
-                pipeline_detections.append(PipelineDetection(
-                    detection=det,
-                    classification=cls_res,
-                    crop=crop
-                ))
+                # Only accept verified traffic sign classes (class_id >= 0 and confidence >= conf_threshold)
+                if cls_res.class_id >= 0 and cls_res.confidence >= conf_threshold:
+                    pipeline_detections.append(PipelineDetection(
+                        detection=det,
+                        classification=cls_res,
+                        crop=crop
+                    ))
         cls_latency_ms = (time.perf_counter() - t_cls_start) * 1000.0
 
         # Stage 4: Temporal Tracking & Anti-Flicker (for Continuous Video/Driving)
