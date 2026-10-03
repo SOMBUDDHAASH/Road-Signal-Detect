@@ -1,0 +1,34 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Virtual environment
+.venv/
+venv/
+ENV/
+env/
+
+# Data and large files
+data/raw/
+data/archive/
+*.zip
+*.tar.gz
+
+# Model weights
+weights/*.pt
+weights/*.pth
+weights/*.onnx
+weights/*.engine
+!weights/.gitkeep
+
+# Output and temporary testing artifacts
+outputs/
+*.mp4
+runs/
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

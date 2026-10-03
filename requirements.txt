@@ -1,0 +1,21 @@
+# Core computer vision & numerical processing
+numpy>=1.24.0
+opencv-python>=4.8.0
+pillow>=10.0.0
+
+# Schema & validation
+pydantic>=2.0.0
+
+# Interactive Dashboard & Web Services
+streamlit>=1.30.0
+fastapi>=0.100.0
+uvicorn>=0.23.0
+python-multipart>=0.0.9
+
+# Deep Learning Frameworks (Optional for Mock mode, Required for Model Adapters)
+# torch>=2.0.0
+# torchvision>=0.15.0
+# ultralytics>=8.0.0
+
+# Testing & Quality
+pytest>=7.4.0

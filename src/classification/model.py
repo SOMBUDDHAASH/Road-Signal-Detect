@@ -1,0 +1,107 @@
+"""
+PyTorch & ONNX Classification Adapter for Member C (Classification Lead).
+Supports loading trained PyTorch weights, TorchScript, or ONNX models trained on GTSRB.
+"""
+
+from typing import List, Optional
+import os
+import numpy as np
+import cv2
+
+from src.schema import ClassificationResult
+from src.classification.base import BaseClassifier
+from src.gtsrb_classes import get_class_name, get_sign_category
+
+
+class PyTorchClassifier(BaseClassifier):
+    """
+    Adapter for Member C's trained CNN / MobileNetV3 / ResNet model on GTSRB (43 classes).
+    Supports PyTorch (.pt/.pth) and TorchScript (.pt) model files.
+    """
+
+    def __init__(
+        self,
+        model_path: Optional[str] = None,
+        img_size: int = 32,
+        device: str = "cpu"
+    ):
+        self.model_path = model_path or os.path.join("weights", "classification", "classifier.pt")
+        self.img_size = img_size
+        self.device = device
+        self.model = None
+        self._load_model()
+
+    def _load_model(self):
+        if not os.path.exists(self.model_path):
+            return
+
+        try:
+            import torch
+            # Attempt to load torchscript or full state dict
+            try:
+                self.model = torch.jit.load(self.model_path, map_location=self.device)
+                self.model.eval()
+            except Exception:
+                # Alternatively load python state dict if model definition is provided
+                self.model = torch.load(self.model_path, map_location=self.device)
+                if hasattr(self.model, "eval"):
+                    self.model.eval()
+        except ImportError:
+            pass
+        except Exception as e:
+            print(f"[Warning] Failed to load PyTorch classifier from {self.model_path}: {e}")
+
+    @property
+    def is_ready(self) -> bool:
+        return self.model is not None
+
+    def preprocess(self, crop: np.ndarray) -> np.ndarray:
+        """
+        Preprocess crop for GTSRB model:
+        1. Resize to target dimension (e.g. 32x32)
+        2. Normalize pixel values to [0.0, 1.0]
+        3. Convert from (H, W, C) to (C, H, W)
+        """
+        resized = cv2.resize(crop, (self.img_size, self.img_size), interpolation=cv2.INTER_AREA)
+        # Convert BGR to RGB
+        rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+        # Normalize
+        normalized = rgb.astype(np.float32) / 255.0
+        # Transpose HWC -> CHW
+        transposed = np.transpose(normalized, (2, 0, 1))
+        # Add batch dimension (1, C, H, W)
+        return np.expand_dims(transposed, axis=0)
+
+    def classify(self, crop: np.ndarray) -> ClassificationResult:
+        if crop is None or crop.size == 0:
+            return ClassificationResult(class_id=-1, class_name="Invalid Crop", confidence=0.0)
+
+        if not self.is_ready:
+            raise RuntimeError(
+                f"Classification model weights not found at '{self.model_path}'. "
+                "Ensure Member C places the model weights there or use MockClassifier / ColorHeuristicClassifier."
+            )
+
+        import torch
+        tensor_input = torch.from_numpy(self.preprocess(crop)).float().to(self.device)
+
+        with torch.no_grad():
+            logits = self.model(tensor_input)
+            probs = torch.softmax(logits, dim=1).cpu().numpy()[0]
+
+        top_indices = np.argsort(probs)[::-1]
+        best_id = int(top_indices[0])
+        best_conf = float(probs[best_id])
+
+        top_k = []
+        for i in range(min(5, len(top_indices))):
+            cid = int(top_indices[i])
+            top_k.append((cid, get_class_name(cid), float(probs[cid])))
+
+        return ClassificationResult(
+            class_id=best_id,
+            class_name=get_class_name(best_id),
+            confidence=best_conf,
+            category=get_sign_category(best_id),
+            top_k=top_k
+        )
