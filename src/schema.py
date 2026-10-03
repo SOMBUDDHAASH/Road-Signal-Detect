@@ -106,6 +106,9 @@ class ClassificationResult:
     confidence: float
     category: SignCategory = SignCategory.OTHER
     top_k: List[Tuple[int, str, float]] = field(default_factory=list)
+    entropy: float = 0.0
+    margin: float = 1.0
+    is_ambiguous: bool = False
 
 
 @dataclass
@@ -126,6 +129,7 @@ class PipelineResult:
     fps: float
     active_speed_limit: Optional[str] = None
     active_hazard: Optional[str] = None
+    environmental_telemetry: Optional[Dict[str, Any]] = None
 
     @property
     def total_latency_ms(self) -> float:

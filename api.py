@@ -109,6 +109,81 @@ async def predict_annotated_image(
     return Response(content=buffer.tobytes(), media_type="image/jpeg")
 
 
+@app.get("/video_feed")
+def live_mjpeg_stream(mode: str = Query("heuristic"), device_index: int = Query(0)):
+    """
+    Live MJPEG streaming endpoint for external displays, VLC, and vehicle dash displays.
+    """
+    from fastapi.responses import StreamingResponse
+
+    def frame_generator():
+        cap = cv2.VideoCapture(device_index)
+        pipeline = get_pipeline_instance(mode)
+        try:
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                result = pipeline.process_frame(frame, is_video=True)
+                ret_jpg, jpeg = cv2.imencode(".jpg", result.annotated_frame)
+                if ret_jpg:
+                    yield (b"--frame\r\n"
+                           b"Content-Type: image/jpeg\r\n\r\n" + jpeg.tobytes() + b"\r\n")
+        finally:
+            cap.release()
+
+    return StreamingResponse(frame_generator(), media_type="multipart/x-mixed-replace; boundary=frame")
+
+
+from fastapi import WebSocket, WebSocketDisconnect
+import time
+import base64
+
+@app.websocket("/ws/telemetry")
+async def websocket_telemetry(websocket: WebSocket):
+    """
+    High-speed bi-directional telemetry WebSocket for vehicle fleet telemetry.
+    Accepts base64 frame packets and streams instantaneous detections, active speed limits,
+    entropy, and hazards back to the client.
+    """
+    await websocket.accept()
+    try:
+        while True:
+            data = await websocket.receive_json()
+            if "image_base64" in data:
+                img_bytes = base64.b64decode(data["image_base64"])
+                nparr = np.frombuffer(img_bytes, np.uint8)
+                img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                if img is not None:
+                    pipeline = get_pipeline_instance(data.get("mode", "heuristic"))
+                    result = pipeline.process_frame(img, is_video=data.get("is_video", False))
+                    await websocket.send_json({
+                        "signs_detected": result.num_signs_detected,
+                        "active_speed_limit": result.active_speed_limit,
+                        "active_hazard": result.active_hazard,
+                        "fps": result.fps,
+                        "latency_ms": result.latency_ms,
+                        "detections": [
+                            {
+                                "bbox": list(d.detection.bbox.to_xyxy()),
+                                "class_id": d.classification.class_id,
+                                "class_name": d.classification.class_name,
+                                "confidence": round(d.classification.confidence, 3),
+                                "category": d.classification.category.value,
+                                "entropy": getattr(d.classification, "entropy", 0.0),
+                                "margin": getattr(d.classification, "margin", 1.0),
+                                "is_ambiguous": getattr(d.classification, "is_ambiguous", False)
+                            } for d in result.detections
+                        ]
+                    })
+                else:
+                    await websocket.send_json({"error": "Failed to decode image"})
+            else:
+                await websocket.send_json({"status": "ready", "server_time": time.time()})
+    except WebSocketDisconnect:
+        pass
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=True)

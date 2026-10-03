@@ -67,35 +67,48 @@ class Visualizer:
     ):
         h, w = canvas.shape[:2]
 
-        # A. Active Speed Limit Sign at Top-Right
+        # A. Active Speed Limit Sign & Braking Advisory at Top-Right
         if active_speed_limit:
-            cx, cy, r = w - 55, 55, 36
+            cx, cy, r = w - 60, 58, 38
             # White circular disc with red outer border (European speed limit sign)
-            cv2.circle(canvas, (cx, cy), r, (40, 40, 230), -1, cv2.LINE_AA)
-            cv2.circle(canvas, (cx, cy), r - 6, (250, 250, 250), -1, cv2.LINE_AA)
+            cv2.circle(canvas, (cx, cy), r + 2, (15, 15, 15), -1, cv2.LINE_AA)  # shadow
+            cv2.circle(canvas, (cx, cy), r, (35, 35, 235), -1, cv2.LINE_AA)
+            cv2.circle(canvas, (cx, cy), r - 7, (250, 250, 250), -1, cv2.LINE_AA)
             # Text inside
-            speed_text = active_speed_limit.replace(" km/h", "")
-            (tw, th), _ = cv2.getTextSize(speed_text, self.font, 0.75, 2)
-            cv2.putText(canvas, speed_text, (cx - tw // 2, cy + th // 2), self.font, 0.75, (20, 20, 20), 2, cv2.LINE_AA)
-            # Small caption
-            cv2.putText(canvas, "SPEED LIMIT", (cx - 38, cy + r + 16), self.font, 0.35, (240, 240, 240), 1, cv2.LINE_AA)
+            speed_text = active_speed_limit.replace(" km/h", "").replace("km/h", "").strip()
+            (tw, th), _ = cv2.getTextSize(speed_text, self.font, 0.85, 2)
+            cv2.putText(canvas, speed_text, (cx - tw // 2, cy + th // 2), self.font, 0.85, (20, 20, 20), 2, cv2.LINE_AA)
+
+            # Calculate theoretical dry stopping distance (Reaction 1.0s + Braking mu=0.7)
+            try:
+                v = float("".join(filter(str.isdigit, speed_text)))
+                stop_dist = int(round((v / 3.6) * 1.0 + (v ** 2) / (250.0 * 0.7)))
+                advisory_text = f"STOP DIST: ~{stop_dist}m"
+            except Exception:
+                advisory_text = "SPEED LIMIT"
+
+            cv2.putText(canvas, advisory_text, (cx - 48, cy + r + 16), self.font, 0.36, (240, 240, 240), 1, cv2.LINE_AA)
 
         # B. Hazard Alert Banner at Top-Center
         if active_hazard:
             banner_text = f"WARNING: {active_hazard.upper()} AHEAD"
             (tw, th), _ = cv2.getTextSize(banner_text, self.font, 0.55, 2)
-            bx1 = (w - tw) // 2 - 15
+            bx1 = (w - tw) // 2 - 18
             by1 = 12
-            bx2 = bx1 + tw + 30
-            by2 = by1 + th + 18
-            cv2.rectangle(canvas, (bx1, by1), (bx2, by2), (20, 120, 230), cv2.FILLED)
+            bx2 = bx1 + tw + 36
+            by2 = by1 + th + 20
+            # High-visibility warning banner
+            cv2.rectangle(canvas, (bx1, by1), (bx2, by2), (18, 110, 235), cv2.FILLED)
             cv2.rectangle(canvas, (bx1, by1), (bx2, by2), (255, 255, 255), 1, cv2.LINE_AA)
-            cv2.putText(canvas, banner_text, (bx1 + 15, by2 - 6), self.font, 0.55, (255, 255, 255), 2, cv2.LINE_AA)
+            cv2.putText(canvas, banner_text, (bx1 + 18, by2 - 7), self.font, 0.55, (255, 255, 255), 2, cv2.LINE_AA)
 
     def _draw_detection(self, canvas: np.ndarray, item: PipelineDetection):
         bbox = item.detection.bbox
         cls_result = item.classification
-        color = get_category_color_bgr(cls_result.category)
+        is_ambiguous = getattr(cls_result, "is_ambiguous", False)
+
+        # Ambiguous detections colored in caution amber
+        color = (0, 215, 255) if is_ambiguous else get_category_color_bgr(cls_result.category)
 
         x1, y1, x2, y2 = bbox.to_xyxy()
 
@@ -118,10 +131,11 @@ class Visualizer:
         cv2.line(canvas, (x2, y2), (x2 - corner_len, y2), color, c_thick, cv2.LINE_AA)
         cv2.line(canvas, (x2, y2), (x2, y2 - corner_len), color, c_thick, cv2.LINE_AA)
 
-        # Build label text: "[ID: 14] Stop (96%)" or "Track #1 [ID: 14] Stop"
+        # Build label text: "[ID: 14] Stop (96%)" or "[Ambiguous] [ID: 14] Stop"
         conf_pct = int(cls_result.confidence * 100)
         track_prefix = f"{item.detection.detector_label} " if "Track" in item.detection.detector_label else ""
-        label_text = f"{track_prefix}[{cls_result.class_id}] {cls_result.class_name} ({conf_pct}%)"
+        amb_prefix = "[?] " if is_ambiguous else ""
+        label_text = f"{amb_prefix}{track_prefix}[{cls_result.class_id}] {cls_result.class_name} ({conf_pct}%)"
 
         (tw, th), baseline = cv2.getTextSize(label_text, self.font, self.font_scale, self.font_thickness)
 

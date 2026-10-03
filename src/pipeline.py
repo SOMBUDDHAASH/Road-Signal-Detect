@@ -62,7 +62,8 @@ class TrafficSignPipeline:
         enable_plague_detector: bool = True,
         enable_ocr: bool = True,
         enable_stage2_proposals: bool = True,
-        enable_semantic_verification: bool = True
+        enable_semantic_verification: bool = True,
+        enable_environmental_enhancer: bool = False
     ):
         self.detector = detector
         self.classifier = classifier
@@ -71,6 +72,7 @@ class TrafficSignPipeline:
         self.default_conf_threshold = default_conf_threshold
         self.enable_tracking = enable_tracking
         self.tracker = TemporalSignTracker() if enable_tracking else None
+        self.enable_environmental_enhancer = enable_environmental_enhancer
 
         # Perception Method Toggles
         # Primary GTSRB deep learning models are prioritized and always active.
@@ -120,7 +122,8 @@ class TrafficSignPipeline:
         enable_plague_detector: Optional[bool] = None,
         enable_ocr: Optional[bool] = None,
         enable_stage2_proposals: Optional[bool] = None,
-        enable_semantic_verification: Optional[bool] = None
+        enable_semantic_verification: Optional[bool] = None,
+        enable_environmental_enhancer: Optional[bool] = None
     ) -> PipelineResult:
         """
         Processes a single image frame through the full pipeline:
@@ -140,6 +143,14 @@ class TrafficSignPipeline:
         use_ocr = self.enable_ocr if enable_ocr is None else enable_ocr
         use_stage2 = self.enable_stage2_proposals if enable_stage2_proposals is None else enable_stage2_proposals
         use_verifier = self.enable_semantic_verification if enable_semantic_verification is None else enable_semantic_verification
+        use_env = self.enable_environmental_enhancer if enable_environmental_enhancer is None else enable_environmental_enhancer
+
+        # Environmental Pre-Conditioning (Night, Rain, Glare, Fog)
+        env_telemetry = None
+        proc_frame = frame
+        if use_env:
+            from src.utils.environmental import get_environmental_conditioner
+            proc_frame, env_telemetry = get_environmental_conditioner().auto_enhance(frame)
 
         # Stage 1: Detection (Primary GTSRB/YOLO Localization)
         t_det_start = time.perf_counter()
@@ -157,10 +168,10 @@ class TrafficSignPipeline:
             sig = inspect.signature(self.detector.detect)
             if "enable_stage2_proposals" in sig.parameters:
                 raw_detections = self.detector.detect(
-                    frame, conf_threshold=conf_threshold, enable_stage2_proposals=use_stage2
+                    proc_frame, conf_threshold=conf_threshold, enable_stage2_proposals=use_stage2
                 )
             else:
-                raw_detections = self.detector.detect(frame, conf_threshold=conf_threshold)
+                raw_detections = self.detector.detect(proc_frame, conf_threshold=conf_threshold)
 
             # If scene detector found nothing but image is compact (<= 200px), evaluate whole crop as fallback
             if not raw_detections and max(w, h) <= 200:
@@ -182,7 +193,7 @@ class TrafficSignPipeline:
 
             # Guard against zero-area or boundary degenerate boxes
             if x2 > x1 and y2 > y1:
-                crop = frame[y1:y2, x1:x2].copy()
+                crop = proc_frame[y1:y2, x1:x2].copy()
                 if crop.size > 0:
                     valid_crops.append(crop)
                     valid_detections.append(det)
@@ -328,7 +339,8 @@ class TrafficSignPipeline:
             latency_ms=latency_dict,
             fps=round(self._smoothed_fps, 1),
             active_speed_limit=speed_limit,
-            active_hazard=hazard
+            active_hazard=hazard,
+            environmental_telemetry=env_telemetry
         )
 
 

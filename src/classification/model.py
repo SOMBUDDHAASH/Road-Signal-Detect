@@ -110,12 +110,21 @@ class PyTorchClassifier(BaseClassifier):
             cid = int(top_indices[i])
             top_k.append((cid, get_class_name(cid), float(probs[cid])))
 
+        # Epistemic Uncertainty & Ambiguity Calculation (Feynman / Camus)
+        safe_probs = np.clip(probs, 1e-12, 1.0)
+        entropy = float(-np.sum(safe_probs * np.log2(safe_probs)))
+        margin = float(probs[top_indices[0]] - probs[top_indices[1]]) if len(top_indices) > 1 else 1.0
+        is_ambiguous = bool(entropy > 2.3 or (margin < 0.15 and best_conf < 0.70))
+
         result = ClassificationResult(
             class_id=best_id,
             class_name=get_class_name(best_id),
             confidence=best_conf,
             category=get_sign_category(best_id),
-            top_k=top_k
+            top_k=top_k,
+            entropy=round(entropy, 3),
+            margin=round(margin, 3),
+            is_ambiguous=is_ambiguous
         )
         result.probs = probs
         return result

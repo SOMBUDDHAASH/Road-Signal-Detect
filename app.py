@@ -36,6 +36,8 @@ from src.utils.youtube import YouTubeStreamHandler
 from src.utils.event_logger import DetectionEventLogger
 from src.dataset.custom_dataset import CustomDatasetManager
 from src.dataset.benchmark_loader import BenchmarkDataLoader
+from src.utils.audio_alert import get_audio_transducer
+from src.utils.environmental import get_environmental_conditioner
 
 # Page Configuration
 st.set_page_config(
@@ -254,7 +256,8 @@ def get_active_pipeline(
     enable_plague_detector: bool = True,
     enable_ocr: bool = True,
     enable_stage2_proposals: bool = True,
-    enable_semantic_verification: bool = True
+    enable_semantic_verification: bool = True,
+    enable_environmental_enhancer: bool = False
 ) -> TrafficSignPipeline:
     """Builds the active pipeline with hot-swappable detector and classifier models."""
     # Detector selection
@@ -301,8 +304,21 @@ def get_active_pipeline(
         enable_plague_detector=enable_plague_detector,
         enable_ocr=enable_ocr,
         enable_stage2_proposals=enable_stage2_proposals,
-        enable_semantic_verification=enable_semantic_verification
+        enable_semantic_verification=enable_semantic_verification,
+        enable_environmental_enhancer=enable_environmental_enhancer
     )
+
+
+def render_audio_alerts(result: PipelineResult, enable_audio: bool):
+    """Renders non-blocking HTML5 Web Audio chimes and Web Speech voice announcements."""
+    if enable_audio and result.detections:
+        audio_html = get_audio_transducer().generate_html_audio_payload(
+            result.detections,
+            enable_sound=True,
+            enable_speech=True
+        )
+        if audio_html:
+            st.components.v1.html(audio_html, height=0, width=0)
 
 
 def render_event_log_ui(event_logger: DetectionEventLogger):
@@ -445,12 +461,24 @@ def main():
         value=True,
         help="Verifies detected sign colors & geometries against GTSRB taxonomy to prevent false alarms."
     )
+    toggle_audio = st.sidebar.toggle(
+        "🔊 ADAS Voice & Audio Alerts",
+        value=True,
+        help="Synthesizes Web Audio chimes and Web Speech voice announcements for Stop, Speed Limits, and Hazards."
+    )
+    toggle_env = st.sidebar.toggle(
+        "🌧️ Adverse Weather & Night Enhancer",
+        value=True,
+        help="Applies adaptive CLAHE, low-light gamma correction, and dehazing for rain, fog, and night scenes."
+    )
 
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 📁 System Architecture")
     plague_badge_cls = "zen-pill-active" if toggle_plague else "zen-pill-inactive"
     ocr_badge_cls = "zen-pill-active" if toggle_ocr else "zen-pill-inactive"
     stage2_badge_cls = "zen-pill-active" if toggle_stage2 else "zen-pill-inactive"
+    audio_badge_cls = "zen-pill-active" if toggle_audio else "zen-pill-inactive"
+    env_badge_cls = "zen-pill-active" if toggle_env else "zen-pill-inactive"
     st.sidebar.markdown(f"""
     <div style="display:flex; flex-direction:column; gap:6px;">
         <span class="zen-pill zen-pill-active"><span class="zen-dot"></span> Pipeline: Standalone Ready</span>
@@ -458,6 +486,8 @@ def main():
         <span class="zen-pill zen-pill-active"><span class="zen-dot"></span> Member B: YOLOv8 Detector</span>
         <span class="zen-pill zen-pill-active"><span class="zen-dot"></span> Member C: GTSRB 43 Classifier</span>
         <span class="zen-pill zen-pill-active"><span class="zen-dot"></span> Member D: Master Integration</span>
+        <span class="zen-pill {audio_badge_cls}"><span class="zen-dot"></span> Transducer: Voice & Audio Alerts</span>
+        <span class="zen-pill {env_badge_cls}"><span class="zen-dot"></span> Conditioner: Adverse Weather & Night</span>
         <span class="zen-pill {plague_badge_cls}"><span class="zen-dot"></span> Secondary: Plague Fallback ({'Active' if toggle_plague else 'Bypassed'})</span>
         <span class="zen-pill {ocr_badge_cls}"><span class="zen-dot"></span> Secondary: OCR Engine ({'Active' if toggle_ocr else 'Bypassed'})</span>
         <span class="zen-pill {stage2_badge_cls}"><span class="zen-dot"></span> Proposals: Stage 2 ({'Active' if toggle_stage2 else 'Pure YOLO'})</span>
@@ -489,7 +519,8 @@ def main():
         enable_plague_detector=toggle_plague,
         enable_ocr=toggle_ocr,
         enable_stage2_proposals=toggle_stage2,
-        enable_semantic_verification=toggle_verifier
+        enable_semantic_verification=toggle_verifier,
+        enable_environmental_enhancer=toggle_env
     )
     logger = st.session_state.event_logger
 
@@ -640,6 +671,9 @@ def main():
             if frame is not None:
                 result = pipeline.process_frame(frame, conf_threshold=conf_thresh, is_video=False)
                 logger.log_detections(result.detections)
+                render_audio_alerts(result, toggle_audio)
+                if result.environmental_telemetry and result.environmental_telemetry.get("was_enhanced"):
+                    st.caption(f"🌧️ Environmental Auto-Enhancement Active: {', '.join(result.environmental_telemetry.get('applied_ops', []))}")
 
             col1, col2, col3 = st.columns([1, 2, 2])
             with col1:
@@ -710,6 +744,9 @@ def main():
             if frame is not None:
                 result = pipeline.process_frame(frame, conf_threshold=conf_thresh, is_video=False)
                 logger.log_detections(result.detections)
+                render_audio_alerts(result, toggle_audio)
+                if result.environmental_telemetry and result.environmental_telemetry.get("was_enhanced"):
+                    st.caption(f"🌧️ Environmental Auto-Enhancement Active: {', '.join(result.environmental_telemetry.get('applied_ops', []))}")
 
                 c1, c2 = st.columns(2)
                 with c1:
