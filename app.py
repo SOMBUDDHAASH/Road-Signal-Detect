@@ -95,7 +95,12 @@ def main():
     st.sidebar.markdown("---")
     input_source = st.sidebar.radio(
         "Input Source",
-        ["Sample GTSRB Images", "Upload Image", "Camera Input"]
+        [
+            "Continuous Dashcam Video Stream",
+            "Sample GTSRB Images",
+            "Upload Image",
+            "Camera Snapshot"
+        ]
     )
 
     # Initialize Pipeline
@@ -103,7 +108,82 @@ def main():
 
     frame_to_process = None
 
-    if input_source == "Sample GTSRB Images":
+    if input_source == "Continuous Dashcam Video Stream":
+        st.subheader("🚗 Continuous-Time Driving Video Stream (Moving Vehicle)")
+        st.markdown(
+            "Simulates or streams continuous video from a vehicle camera. "
+            "Features **temporal tracking**, **anti-flicker smoothing**, and **real-time ADAS Cockpit HUD** (active speed limit & hazard warnings)."
+        )
+
+        vid_choice = st.selectbox(
+            "Select Continuous Stream Source",
+            ["Simulated Driving Dashcam Video (Built-in)", "Upload Dashcam MP4 Video", "Live USB Webcam / Dashcam (Device 0)"]
+        )
+
+        video_path = None
+        if vid_choice == "Simulated Driving Dashcam Video (Built-in)":
+            sim_path = os.path.join("data", "samples", "simulated_driving.mp4")
+            if not os.path.exists(sim_path):
+                from scripts.generate_driving_simulation import generate_driving_video
+                generate_driving_video()
+            video_path = sim_path
+        elif vid_choice == "Upload Dashcam MP4 Video":
+            uploaded_vid = st.file_uploader("Upload driving video (.mp4)", type=["mp4", "avi", "mov"])
+            if uploaded_vid:
+                temp_vid_path = os.path.join("outputs", "temp_input_stream.mp4")
+                os.makedirs("outputs", exist_ok=True)
+                with open(temp_vid_path, "wb") as f:
+                    f.write(uploaded_vid.read())
+                video_path = temp_vid_path
+        else:
+            video_path = 0 # Live camera
+
+        col_ctrl1, col_ctrl2 = st.columns([1, 4])
+        with col_ctrl1:
+            run_stream = st.toggle("▶️ Stream Live Detection", value=False)
+
+        if run_stream and video_path is not None:
+            cap = cv2.VideoCapture(video_path)
+            st_frame = st.empty()
+            metric_cols = st.columns(5)
+            m_signs = metric_cols[0].empty()
+            m_speed = metric_cols[1].empty()
+            m_det = metric_cols[2].empty()
+            m_cls = metric_cols[3].empty()
+            m_fps = metric_cols[4].empty()
+
+            frame_idx = 0
+            while run_stream and cap.isOpened():
+                ret, frame = cap.read()
+                if not ret or frame is None:
+                    # Loop video if simulated
+                    if vid_choice == "Simulated Driving Dashcam Video (Built-in)":
+                        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                        continue
+                    else:
+                        break
+
+                frame_idx += 1
+                result = pipeline.process_frame(frame, conf_threshold=conf_thresh)
+
+                # Render annotated frame
+                rgb_view = cv2.cvtColor(result.annotated_frame, cv2.COLOR_BGR2RGB)
+                st_frame.image(rgb_view, channels="RGB", use_container_width=True)
+
+                # Update telemetry
+                m_signs.metric("Visible Signs", result.num_signs_detected)
+                m_speed.metric("Active Speed", result.active_speed_limit or "None")
+                m_det.metric("Detect Time", f"{result.latency_ms['detect_ms']} ms")
+                m_cls.metric("Classify Time", f"{result.latency_ms['classify_ms']} ms")
+                m_fps.metric("Stream FPS", f"{result.fps} FPS")
+
+                time.sleep(0.015) # Smooth frame pace
+
+            cap.release()
+        elif not run_stream:
+            st.info("Toggle **'▶️ Stream Live Detection'** above to launch continuous vehicle detection!")
+
+    elif input_source == "Sample GTSRB Images":
         sample_dir = os.path.join("data", "samples")
         sample_files = sorted(glob.glob(os.path.join(sample_dir, "*.png")))
         if sample_files:
@@ -121,7 +201,7 @@ def main():
             file_bytes = np.asarray(bytearray(uploaded.read()), dtype=np.uint8)
             frame_to_process = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
 
-    elif input_source == "Camera Input":
+    elif input_source == "Camera Snapshot":
         cam_pic = st.camera_input("Take a photo of a road sign")
         if cam_pic:
             file_bytes = np.asarray(bytearray(cam_pic.read()), dtype=np.uint8)

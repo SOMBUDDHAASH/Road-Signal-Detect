@@ -114,6 +114,8 @@ class PipelineResult:
     detections: List[PipelineDetection]
     latency_ms: Dict[str, float]
     fps: float
+    active_speed_limit: Optional[str] = None
+    active_hazard: Optional[str] = None
 
     @property
     def total_latency_ms(self) -> float:
@@ -122,3 +124,4 @@ class PipelineResult:
     @property
     def num_signs_detected(self) -> int:
         return len(self.detections)
+

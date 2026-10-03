@@ -25,9 +25,13 @@ from src.classification.mock import MockClassifier, ColorHeuristicClassifier
 from src.utils.visualizer import Visualizer
 
 
+from src.tracking.tracker import TemporalSignTracker
+
+
 class TrafficSignPipeline:
     """
     Master pipeline integrating Member B's detector and Member C's classifier.
+    Supports continuous temporal tracking, bounding box smoothing, and vehicle HUD state.
     """
 
     def __init__(
@@ -36,13 +40,16 @@ class TrafficSignPipeline:
         classifier: BaseClassifier,
         visualizer: Optional[Visualizer] = None,
         crop_padding_ratio: float = 0.05,
-        default_conf_threshold: float = 0.50
+        default_conf_threshold: float = 0.50,
+        enable_tracking: bool = True
     ):
         self.detector = detector
         self.classifier = classifier
         self.visualizer = visualizer or Visualizer()
         self.crop_padding_ratio = crop_padding_ratio
         self.default_conf_threshold = default_conf_threshold
+        self.enable_tracking = enable_tracking
+        self.tracker = TemporalSignTracker() if enable_tracking else None
 
         # Smoothing for FPS
         self._prev_frame_time = time.perf_counter()
@@ -126,7 +133,15 @@ class TrafficSignPipeline:
                 ))
         cls_latency_ms = (time.perf_counter() - t_cls_start) * 1000.0
 
-        # Stage 4: Performance Telemetry & Visualization
+        # Stage 4: Temporal Tracking & Anti-Flicker (for Continuous Video/Driving)
+        speed_limit = None
+        hazard = None
+        if self.tracker:
+            pipeline_detections = self.tracker.update(pipeline_detections)
+            speed_limit = self.tracker.current_speed_limit
+            hazard = self.tracker.active_hazard_warning
+
+        # Stage 5: Performance Telemetry & HUD Visualization
         total_latency_ms = det_latency_ms + cls_latency_ms
         current_time = time.perf_counter()
         instant_fps = 1.0 / max(1e-5, current_time - self._prev_frame_time)
@@ -143,7 +158,9 @@ class TrafficSignPipeline:
             frame=frame,
             detections=pipeline_detections,
             latency_ms=latency_dict,
-            fps=self._smoothed_fps
+            fps=self._smoothed_fps,
+            active_speed_limit=speed_limit,
+            active_hazard=hazard
         )
 
         return PipelineResult(
@@ -151,7 +168,9 @@ class TrafficSignPipeline:
             annotated_frame=annotated,
             detections=pipeline_detections,
             latency_ms=latency_dict,
-            fps=round(self._smoothed_fps, 1)
+            fps=round(self._smoothed_fps, 1),
+            active_speed_limit=speed_limit,
+            active_hazard=hazard
         )
 
 

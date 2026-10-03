@@ -34,7 +34,9 @@ class Visualizer:
         frame: np.ndarray,
         detections: List[PipelineDetection],
         latency_ms: Dict[str, float] = None,
-        fps: float = 0.0
+        fps: float = 0.0,
+        active_speed_limit: Optional[str] = None,
+        active_hazard: Optional[str] = None
     ) -> np.ndarray:
         """
         Draws all detection boxes, labels, and HUD overlays onto a copy of the frame.
@@ -52,7 +54,43 @@ class Visualizer:
         if self.show_telemetry:
             self._draw_telemetry_hud(canvas, fps, latency_ms, len(detections))
 
+        # 3. Draw ADAS Cockpit HUD (Speed Limit Sign & Hazard Alert)
+        self._draw_adas_cockpit(canvas, active_speed_limit, active_hazard)
+
         return canvas
+
+    def _draw_adas_cockpit(
+        self,
+        canvas: np.ndarray,
+        active_speed_limit: Optional[str] = None,
+        active_hazard: Optional[str] = None
+    ):
+        h, w = canvas.shape[:2]
+
+        # A. Active Speed Limit Sign at Top-Right
+        if active_speed_limit:
+            cx, cy, r = w - 55, 55, 36
+            # White circular disc with red outer border (European speed limit sign)
+            cv2.circle(canvas, (cx, cy), r, (40, 40, 230), -1, cv2.LINE_AA)
+            cv2.circle(canvas, (cx, cy), r - 6, (250, 250, 250), -1, cv2.LINE_AA)
+            # Text inside
+            speed_text = active_speed_limit.replace(" km/h", "")
+            (tw, th), _ = cv2.getTextSize(speed_text, self.font, 0.75, 2)
+            cv2.putText(canvas, speed_text, (cx - tw // 2, cy + th // 2), self.font, 0.75, (20, 20, 20), 2, cv2.LINE_AA)
+            # Small caption
+            cv2.putText(canvas, "SPEED LIMIT", (cx - 38, cy + r + 16), self.font, 0.35, (240, 240, 240), 1, cv2.LINE_AA)
+
+        # B. Hazard Alert Banner at Top-Center
+        if active_hazard:
+            banner_text = f"WARNING: {active_hazard.upper()} AHEAD"
+            (tw, th), _ = cv2.getTextSize(banner_text, self.font, 0.55, 2)
+            bx1 = (w - tw) // 2 - 15
+            by1 = 12
+            bx2 = bx1 + tw + 30
+            by2 = by1 + th + 18
+            cv2.rectangle(canvas, (bx1, by1), (bx2, by2), (20, 120, 230), cv2.FILLED)
+            cv2.rectangle(canvas, (bx1, by1), (bx2, by2), (255, 255, 255), 1, cv2.LINE_AA)
+            cv2.putText(canvas, banner_text, (bx1 + 15, by2 - 6), self.font, 0.55, (255, 255, 255), 2, cv2.LINE_AA)
 
     def _draw_detection(self, canvas: np.ndarray, item: PipelineDetection):
         bbox = item.detection.bbox
@@ -80,9 +118,10 @@ class Visualizer:
         cv2.line(canvas, (x2, y2), (x2 - corner_len, y2), color, c_thick, cv2.LINE_AA)
         cv2.line(canvas, (x2, y2), (x2, y2 - corner_len), color, c_thick, cv2.LINE_AA)
 
-        # Build label text: "[ID: 14] Stop (96.5%)"
+        # Build label text: "[ID: 14] Stop (96%)" or "Track #1 [ID: 14] Stop"
         conf_pct = int(cls_result.confidence * 100)
-        label_text = f"[{cls_result.class_id}] {cls_result.class_name} ({conf_pct}%)"
+        track_prefix = f"{item.detection.detector_label} " if "Track" in item.detection.detector_label else ""
+        label_text = f"{track_prefix}[{cls_result.class_id}] {cls_result.class_name} ({conf_pct}%)"
 
         (tw, th), baseline = cv2.getTextSize(label_text, self.font, self.font_scale, self.font_thickness)
 
@@ -98,7 +137,6 @@ class Visualizer:
 
         # Draw filled background badge with dark contrast
         cv2.rectangle(canvas, (badge_x1, badge_y1), (badge_x2, badge_y2), (25, 25, 25), cv2.FILLED)
-        # Thin colored accent line under/over badge
         cv2.rectangle(canvas, (badge_x1, badge_y1), (badge_x2, badge_y2), color, 1, cv2.LINE_AA)
 
         # Text baseline
