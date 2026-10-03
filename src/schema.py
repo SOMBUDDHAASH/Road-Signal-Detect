@@ -78,6 +78,16 @@ class BoundingBox:
             min(max_height, self.y2 + pad_y)
         )
 
+    def iou(self, other: "BoundingBox") -> float:
+        """Compute Intersection over Union (IoU) with another bounding box."""
+        xA = max(self.x1, other.x1)
+        yA = max(self.y1, other.y1)
+        xB = min(self.x2, other.x2)
+        yB = min(self.y2, other.y2)
+        inter = max(0, xB - xA) * max(0, yB - yA)
+        union = self.area + other.area - inter
+        return float(inter / union) if union > 0 else 0.0
+
 
 @dataclass
 class DetectionResult:

@@ -34,7 +34,7 @@ class StandaloneGTSRBClassifier(BaseClassifier):
         model_path: Optional[str] = None,
         img_size: int = 32,
         device: str = "cpu",
-        min_confidence: float = 0.65
+        min_confidence: float = 0.30
     ):
         # Default weight location in Module C or root weights
         module_c_weights = Path(__file__).resolve().parent / "weights" / "classifier.pt"

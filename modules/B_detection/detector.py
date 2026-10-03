@@ -117,7 +117,49 @@ class StandaloneYOLODetector(BaseDetector):
                     detector_class_id=cls_id
                 ))
 
-        return detections
+        # Stage 2: High-Recall Color & Shape Region Proposals
+        import cv2
+        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        red_mask = cv2.inRange(hsv, np.array([0, 65, 45]), np.array([10, 255, 255])) | cv2.inRange(hsv, np.array([170, 65, 45]), np.array([180, 255, 255]))
+        blue_mask = cv2.inRange(hsv, np.array([100, 65, 45]), np.array([130, 255, 255]))
+        yellow_mask = cv2.inRange(hsv, np.array([16, 65, 45]), np.array([36, 255, 255]))
+        combined = red_mask | blue_mask | yellow_mask
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+        closed = cv2.morphologyEx(combined, cv2.MORPH_CLOSE, kernel)
+        contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        for cnt in contours:
+            bx, by, bw, bh = cv2.boundingRect(cnt)
+            if bw >= 20 and bh >= 20 and bw <= (w * 0.70) and bh <= (h * 0.70):
+                aspect_ratio = bw / float(bh)
+                if 0.48 <= aspect_ratio <= 2.1:
+                    crop = image[by:by+bh, bx:bx+bw]
+                    ycrcb = cv2.cvtColor(crop, cv2.COLOR_BGR2YCrCb)
+                    skin_mask = cv2.inRange(ycrcb, np.array([0, 133, 77]), np.array([255, 173, 127]))
+                    skin_ratio = cv2.countNonZero(skin_mask) / float(crop.shape[0] * crop.shape[1])
+                    if skin_ratio < 0.25:
+                        candidate_box = BoundingBox(bx, by, bx + bw, by + bh).clamp(w, h)
+                        overlap = False
+                        for existing in detections:
+                            if existing.bbox.iou(candidate_box) > 0.35:
+                                overlap = True
+                                break
+                        if not overlap:
+                            detections.append(DetectionResult(
+                                bbox=candidate_box,
+                                confidence=0.75,
+                                detector_label="traffic_sign",
+                                detector_class_id=0
+                            ))
+        # Stage 3: Global Non-Maximum Suppression (NMS) to eliminate duplicate boxes
+        detections.sort(key=lambda d: d.confidence, reverse=True)
+        final_detections: List[DetectionResult] = []
+        for det in detections:
+            if not any(det.bbox.iou(kept.bbox) > 0.40 for kept in final_detections):
+                final_detections.append(det)
+
+        return final_detections
+
 
 
 if __name__ == "__main__":

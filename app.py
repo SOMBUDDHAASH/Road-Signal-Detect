@@ -377,7 +377,7 @@ def main():
             st.session_state.custom_classifier_path = save_path
             st.sidebar.success("✅ Custom Classifier Activated!")
 
-    conf_thresh = st.sidebar.slider("Confidence Gate", min_value=0.10, max_value=0.95, value=0.60, step=0.05)
+    conf_thresh = st.sidebar.slider("Confidence Gate", min_value=0.10, max_value=0.95, value=0.35, step=0.05)
     padding_ratio = st.sidebar.slider("Crop Margin Ratio", min_value=0.0, max_value=0.20, value=0.05, step=0.02)
 
     st.sidebar.markdown("---")
@@ -471,7 +471,7 @@ def main():
         gt = bench_loader.get_ground_truth(chosen_file)
 
         if frame is not None:
-            result = pipeline.process_frame(frame, conf_threshold=conf_thresh)
+            result = pipeline.process_frame(frame, conf_threshold=conf_thresh, is_video=False)
             logger.log_detections(result.detections)
 
             col1, col2, col3 = st.columns([1, 2, 2])
@@ -541,7 +541,7 @@ def main():
             frame = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
 
             if frame is not None:
-                result = pipeline.process_frame(frame, conf_threshold=conf_thresh)
+                result = pipeline.process_frame(frame, conf_threshold=conf_thresh, is_video=False)
                 logger.log_detections(result.detections)
 
                 c1, c2 = st.columns(2)

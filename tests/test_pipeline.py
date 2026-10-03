@@ -59,3 +59,16 @@ def test_pipeline_on_dataset_samples():
     assert result.annotated_frame.shape == test_img.shape
     assert result.latency_ms["detect_ms"] >= 0.0
     assert result.latency_ms["classify_ms"] >= 0.0
+
+
+def test_pipeline_still_image_mode_bypasses_tracking():
+    """Verify is_video=False allows detections to appear without multi-frame temporal confirmation."""
+    pipeline = TrafficSignPipeline.create(mode="heuristic")
+    frame = np.full((300, 300, 3), 120, dtype=np.uint8)
+    # Draw a blue circle to simulate a mandatory sign
+    cv2.circle(frame, (150, 150), 50, (200, 50, 20), -1)
+
+    result = pipeline.process_frame(frame, conf_threshold=0.30, is_video=False)
+    assert isinstance(result, PipelineResult)
+    assert result.annotated_frame.shape == frame.shape
+

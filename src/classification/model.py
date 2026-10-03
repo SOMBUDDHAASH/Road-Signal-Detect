@@ -25,7 +25,7 @@ class PyTorchClassifier(BaseClassifier):
         img_size: int = 32,
         device: str = "cpu",
         auto_fallback: bool = True,
-        min_confidence: float = 0.65
+        min_confidence: float = 0.30
     ):
         self.model_path = model_path or os.path.join("weights", "classification", "classifier.pt")
         self.img_size = img_size

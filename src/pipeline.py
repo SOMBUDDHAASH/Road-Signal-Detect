@@ -16,13 +16,27 @@ from src.schema import (
     ClassificationResult,
     PipelineDetection,
     PipelineResult,
-    BoundingBox
+    BoundingBox,
+    SignCategory
 )
 from src.detection.base import BaseDetector
 from src.detection.mock import MockDetector, ColorContourDetector
 from src.classification.base import BaseClassifier
 from src.classification.mock import MockClassifier, ColorHeuristicClassifier
 from src.utils.visualizer import Visualizer
+
+# Mapping YOLO detector classes to standard GTSRB classes for fusion
+YOLO_LABEL_TO_GTSRB: Dict[str, Tuple[int, str, SignCategory]] = {
+    "Stop": (14, "Stop", SignCategory.PROHIBITORY),
+    "Speed Limit 20": (0, "Speed limit (20km/h)", SignCategory.PROHIBITORY),
+    "Speed Limit 30": (1, "Speed limit (30km/h)", SignCategory.PROHIBITORY),
+    "Speed Limit 50": (2, "Speed limit (50km/h)", SignCategory.PROHIBITORY),
+    "Speed Limit 60": (3, "Speed limit (60km/h)", SignCategory.PROHIBITORY),
+    "Speed Limit 70": (4, "Speed limit (70km/h)", SignCategory.PROHIBITORY),
+    "Speed Limit 80": (5, "Speed limit (80km/h)", SignCategory.PROHIBITORY),
+    "Speed Limit 100": (7, "Speed limit (100km/h)", SignCategory.PROHIBITORY),
+    "Speed Limit 120": (8, "Speed limit (120km/h)", SignCategory.PROHIBITORY),
+}
 
 
 from src.tracking.tracker import TemporalSignTracker
@@ -84,14 +98,16 @@ class TrafficSignPipeline:
     def process_frame(
         self,
         frame: np.ndarray,
-        conf_threshold: Optional[float] = None
+        conf_threshold: Optional[float] = None,
+        is_video: bool = True
     ) -> PipelineResult:
         """
         Processes a single image frame through the full pipeline:
         1. Localize traffic signs (Detection)
         2. Crop and pad candidate regions
-        3. Identify sign classes (Classification)
-        4. Fuse results, calculate latency, and render HUD annotations
+        3. Identify sign classes (Classification) with detector-classifier fusion
+        4. Temporal tracking (for video) or direct confirmation (for still images)
+        5. Fuse results, calculate latency, and render HUD annotations
         """
         if frame is None or frame.size == 0:
             raise ValueError("Input frame is empty or invalid.")
@@ -128,7 +144,7 @@ class TrafficSignPipeline:
                     valid_crops.append(crop)
                     valid_detections.append(det)
 
-        # Stage 3: Classification
+        # Stage 3: Classification & Smart Multi-Stage Fusion
         t_cls_start = time.perf_counter()
         pipeline_detections: List[PipelineDetection] = []
 
@@ -136,7 +152,19 @@ class TrafficSignPipeline:
             # Batch classification if supported, else sequential
             cls_results: List[ClassificationResult] = self.classifier.classify_batch(valid_crops)
             for det, cls_res, crop in zip(valid_detections, cls_results, valid_crops):
-                # Only accept verified traffic sign classes (class_id >= 0 and confidence >= conf_threshold)
+                # Smart Fusion: If detector already identified a specific sign class with high confidence
+                # and classifier is lower confidence or unclassified, trust detector!
+                if det.detector_label in YOLO_LABEL_TO_GTSRB and det.confidence >= 0.35:
+                    yolo_cid, yolo_name, yolo_cat = YOLO_LABEL_TO_GTSRB[det.detector_label]
+                    if cls_res.class_id < 0 or (cls_res.class_id != yolo_cid and cls_res.confidence < det.confidence):
+                        cls_res = ClassificationResult(
+                            class_id=yolo_cid,
+                            class_name=yolo_name,
+                            confidence=max(cls_res.confidence, det.confidence),
+                            category=yolo_cat
+                        )
+
+                # Accept verified traffic sign classes
                 if cls_res.class_id >= 0 and cls_res.confidence >= conf_threshold:
                     pipeline_detections.append(PipelineDetection(
                         detection=det,
@@ -148,10 +176,22 @@ class TrafficSignPipeline:
         # Stage 4: Temporal Tracking & Anti-Flicker (for Continuous Video/Driving)
         speed_limit = None
         hazard = None
-        if self.tracker:
+        if is_video and self.tracker:
             pipeline_detections = self.tracker.update(pipeline_detections)
             speed_limit = self.tracker.current_speed_limit
             hazard = self.tracker.active_hazard_warning
+        else:
+            # For still images, bypass multi-frame tracking and directly extract vehicle state
+            speed_map = {
+                0: "20 km/h", 1: "30 km/h", 2: "50 km/h", 3: "60 km/h",
+                4: "70 km/h", 5: "80 km/h", 7: "100 km/h", 8: "120 km/h"
+            }
+            for d in pipeline_detections:
+                cid = d.classification.class_id
+                if cid in speed_map and not speed_limit:
+                    speed_limit = speed_map[cid]
+                if d.classification.category == SignCategory.DANGER and not hazard:
+                    hazard = d.classification.class_name
 
         # Stage 5: Performance Telemetry & HUD Visualization
         total_latency_ms = det_latency_ms + cls_latency_ms
