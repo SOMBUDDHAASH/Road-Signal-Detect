@@ -103,3 +103,19 @@ streamlit run app.py
 ```
 Select **TensorFlow / Keras CNN (traffic_sign_model.keras - Member C)** in the sidebar!
 
+---
+
+## 7. Production Engineering Upgrades (Required for Real Pipeline)
+
+Standard Softmax layers force overconfident guesses on ambiguous or out-of-distribution inputs (e.g. blurry signs triggering 99% false positives). When deploying the production classifier, Member C must implement:
+
+1. **Temperature Scaling**:
+   - Scale final logits ($z_i / T$) with $T \approx 1.3$ before applying Softmax.
+   - Softens extreme probability distributions without altering the top-1 rank order ($\arg\max_i z_i$).
+2. **Epistemic Uncertainty Filtering**:
+   - Compute Shannon Entropy $H(p) = -\sum_{i=1}^{K} p_i \log_2(p_i)$ on the output probability distribution.
+   - Enforce an entropy ceiling (e.g., $H(p) > 2.3$) to flag or drop ambiguous, damaged, or out-of-distribution inputs, forcing the system to reject random hallucinations rather than guessing.
+3. **Hierarchical Loss Training**:
+   - Train your CNN with a two-level loss function: a Super-Category loss (differentiating Prohibitory vs Danger vs Mandatory vs Priority signs first) followed by fine-grained class classification.
+
+

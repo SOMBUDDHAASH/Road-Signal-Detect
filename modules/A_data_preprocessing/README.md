@@ -73,3 +73,19 @@ data/
    git commit -m "feat(data): implement Member A custom preprocessing and augmentation"
    git push origin feature/data-preprocessing
    ```
+
+---
+
+## 4. Production Engineering Upgrades (Required for Real Pipeline)
+
+GTSRB models often fail on real-world inputs because they lack exposure to environmental degradations and scale variations. When deploying the real production dataset, Member A must implement:
+
+1. **Adverse Weather Augmentation**:
+   - Integrate `Albumentations` to simulate realistic driving degradations.
+   - Implement synthetic rain streaks, night luminance reduction ($\gamma \in [0.35, 0.70]$), and vehicle motion blur (kernel sizes $5 \times 5$ to $13 \times 13$).
+2. **Class Imbalance Correction**:
+   - GTSRB has extreme frequency variance (Class 2 has 2,250 samples; Class 0 has only 210 samples).
+   - Apply SMOTE or random oversampling with geometric jitter to balance minority classes (e.g. 20 km/h, dangerous curve left) to at least 800 training samples.
+3. **Multi-Scale Resolution Bucketing**:
+   - Store and train crops across variable resolutions ($16 \times 16$ up to $128 \times 128$ pixels) to mirror actual dashcam distances and avoid pixelation distortion.
+

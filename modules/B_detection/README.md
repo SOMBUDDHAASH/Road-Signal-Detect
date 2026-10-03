@@ -87,3 +87,19 @@ Upon completion, the script automatically copies your best weights to both `modu
    git commit -m "feat(detection): integrate Member B fine-tuned YOLO detector"
    git push origin feature/detection
    ```
+
+---
+
+## 6. Production Engineering Upgrades (Required for Real Pipeline)
+
+High-confidence misclassifications often occur because the detector passes a poorly cropped image (e.g., clipping part of the sign or capturing background clutter). When deploying the production detector, Member B must implement:
+
+1. **Small-Object Anchor Tuning**:
+   - Standard YOLO anchor priors are biased toward pedestrians and vehicles.
+   - Optimize YOLO anchor box priors specifically for objects below $32 \times 32$ pixels using k-means clustering on GTSDB ground-truth bounding boxes.
+2. **Aspect-Ratio Clamping**:
+   - Enforce strict square-ish aspect ratio priors ($0.75 \le W/H \le 1.33$) to suppress false detections on vertical structures like utility poles, building edges, and trees.
+3. **Scale-Guarded Passthrough Integration**:
+   - Ensure the pipeline handles pre-cropped inputs differently from full scene frames.
+   - Maintain Member D's scale guard (treating inputs with $\max(W,H) \le 160\text{px}$ as direct signs to prevent YOLO from sub-cropping internal icons).
+
