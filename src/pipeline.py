@@ -188,6 +188,11 @@ class TrafficSignPipeline:
         valid_detections: List[DetectionResult] = []
 
         for det in raw_detections:
+            # Aspect-Ratio Clamping: Enforce strict square-ish aspect ratio priors (0.75 <= W/H <= 1.33)
+            # on full scene frames (max(w,h) > 160) to suppress false positives on vertical structures
+            if max(w, h) > 160 and not (0.75 <= det.bbox.aspect_ratio <= 1.33):
+                continue
+
             padded_bbox = det.bbox.pad(self.crop_padding_ratio, max_width=w, max_height=h)
             x1, y1, x2, y2 = padded_bbox.to_xyxy()
 

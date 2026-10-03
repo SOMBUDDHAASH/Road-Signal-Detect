@@ -65,10 +65,12 @@ def train_model(
     batch_size: int = 64,
     learning_rate: float = 0.001,
     output_path: str = "weights/classification/classifier.pt",
-    progress_callback = None
+    progress_callback = None,
+    use_hierarchical: bool = True
 ) -> Tuple[float, str]:
     """
-    Trains TrafficSignCNN on in-memory numpy arrays and saves TorchScript model.
+    Trains TrafficSignCNN (or HierarchicalTrafficSignCNN) on in-memory numpy arrays
+    and saves calibrated TorchScript model for universal deployment.
     """
     import torch
     import torch.nn as nn
@@ -76,7 +78,7 @@ def train_model(
     from torch.utils.data import TensorDataset, DataLoader
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Training on device: {device}")
+    print(f"Training on device: {device} (Hierarchical Loss: {use_hierarchical})")
 
     # Prepare datasets
     tensor_x = torch.from_numpy(train_images).float()
@@ -91,14 +93,22 @@ def train_model(
         val_dataset = TensorDataset(val_x, val_y)
         val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
-    model = get_model_definition(num_classes=num_classes).to(device)
-    criterion = nn.CrossEntropyLoss()
+    if use_hierarchical:
+        from src.classification.hierarchical import HierarchicalTrafficSignCNN, HierarchicalLoss
+        model = HierarchicalTrafficSignCNN(num_classes=num_classes, export_fine_only=False).to(device)
+        criterion = HierarchicalLoss(lambda_category=0.50)
+    else:
+        model = get_model_definition(num_classes=num_classes).to(device)
+        criterion = nn.CrossEntropyLoss()
+
     optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4)
 
     best_acc = 0.0
 
     for epoch in range(epochs):
         model.train()
+        if use_hierarchical:
+            model.export_fine_only = False
         running_loss = 0.0
         correct = 0
         total = 0
@@ -106,8 +116,13 @@ def train_model(
         for batch_x, batch_y in train_loader:
             batch_x, batch_y = batch_x.to(device), batch_y.to(device)
             optimizer.zero_grad()
-            outputs = model(batch_x)
-            loss = criterion(outputs, batch_y)
+            if use_hierarchical:
+                fine_logits, cat_logits = model(batch_x)
+                loss, _, _ = criterion(fine_logits, cat_logits, batch_y)
+                outputs = fine_logits
+            else:
+                outputs = model(batch_x)
+                loss = criterion(outputs, batch_y)
             loss.backward()
             optimizer.step()
 
@@ -126,7 +141,10 @@ def train_model(
             with torch.no_grad():
                 for vx, vy in val_loader:
                     vx, vy = vx.to(device), vy.to(device)
-                    v_out = model(vx)
+                    if use_hierarchical:
+                        v_out, _ = model(vx)
+                    else:
+                        v_out = model(vx)
                     _, v_pred = torch.max(v_out.data, 1)
                     val_total += vy.size(0)
                     val_correct += (v_pred == vy).sum().item()
@@ -141,6 +159,8 @@ def train_model(
     # Save as TorchScript for universal deployment
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     model.eval()
+    if use_hierarchical:
+        model.export_fine_only = True
     example_input = torch.rand(1, 3, 32, 32).to(device)
     traced_model = torch.jit.trace(model, example_input)
     traced_model.save(output_path)

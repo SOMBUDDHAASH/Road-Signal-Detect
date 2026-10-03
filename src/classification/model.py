@@ -25,13 +25,15 @@ class PyTorchClassifier(BaseClassifier):
         img_size: int = 32,
         device: str = "cpu",
         auto_fallback: bool = True,
-        min_confidence: float = 0.30
+        min_confidence: float = 0.30,
+        temperature: float = 1.30
     ):
         self.model_path = model_path or os.path.join("weights", "classification", "classifier.pt")
         self.img_size = img_size
         self.device = device
         self.auto_fallback = auto_fallback
         self.min_confidence = min_confidence
+        self.temperature = temperature
         self.fallback_classifier = None
         self.model = None
         self._load_model()
@@ -90,7 +92,17 @@ class PyTorchClassifier(BaseClassifier):
         tensor_input = torch.from_numpy(self.preprocess(crop)).float().to(self.device)
 
         with torch.no_grad():
-            logits = self.model(tensor_input)
+            out = self.model(tensor_input)
+            if isinstance(out, tuple):
+                logits = out[0]
+            else:
+                logits = out
+
+            # Pillar 3: Temperature Scaling (T ≈ 1.30) to soften probability distributions & prevent overconfidence
+            t = getattr(self, "temperature", 1.30)
+            if t > 0.0 and t != 1.0:
+                logits = logits / t
+
             probs = torch.softmax(logits, dim=1).cpu().numpy()[0]
 
         top_indices = np.argsort(probs)[::-1]
@@ -110,11 +122,24 @@ class PyTorchClassifier(BaseClassifier):
             cid = int(top_indices[i])
             top_k.append((cid, get_class_name(cid), float(probs[cid])))
 
-        # Epistemic Uncertainty & Ambiguity Calculation (Feynman / Camus)
+        # Pillar 3: Epistemic Uncertainty Filtering (Shannon Entropy H(p))
         safe_probs = np.clip(probs, 1e-12, 1.0)
         entropy = float(-np.sum(safe_probs * np.log2(safe_probs)))
         margin = float(probs[top_indices[0]] - probs[top_indices[1]]) if len(top_indices) > 1 else 1.0
-        is_ambiguous = bool(entropy > 2.3 or (margin < 0.15 and best_conf < 0.70))
+        is_ambiguous = bool(entropy > 2.30 or (margin < 0.15 and best_conf < 0.70))
+
+        # Drop or flag out-of-distribution noise / ambiguous guesses
+        if is_ambiguous and (entropy > 2.50 or best_conf < 0.40):
+            return ClassificationResult(
+                class_id=-1,
+                class_name="Ambiguous / Out-of-Distribution",
+                confidence=best_conf,
+                category=SignCategory.OTHER,
+                top_k=top_k,
+                entropy=round(entropy, 3),
+                margin=round(margin, 3),
+                is_ambiguous=True
+            )
 
         result = ClassificationResult(
             class_id=best_id,

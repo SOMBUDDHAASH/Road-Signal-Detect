@@ -145,8 +145,9 @@ class EnvironmentalConditioner:
 
         # 1. Night / Low-light compensation
         if telemetry["is_night"]:
-            # Adaptive gamma based on how dark the scene is
-            gamma_val = min(1.85, 1.0 + (self.night_luminance_threshold - telemetry["mean_luminance"]) / 70.0)
+            # Adaptive night gamma expansion (dynamically adjusts gamma = 1.35 - 1.85)
+            lum = telemetry["mean_luminance"]
+            gamma_val = round(float(np.clip(1.35 + 0.50 * max(0.0, 1.0 - lum / 45.0), 1.35, 1.85)), 2)
             enhanced = self.apply_gamma(enhanced, gamma=gamma_val)
             applied_ops.append(f"night_gamma_{gamma_val:.2f}")
 

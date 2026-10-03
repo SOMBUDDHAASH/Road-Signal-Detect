@@ -111,15 +111,15 @@ class YOLODetector(BaseDetector):
                     int(xyxy[0]), int(xyxy[1]), int(xyxy[2]), int(xyxy[3])
                 ).clamp(w, h)
 
-                # Guard 2: Skip degenerate or oversized bounding boxes
-                if bbox.width < 12 or bbox.height < 12:
+                # Guard 2: Skip degenerate or oversized bounding boxes (small-object anchor tuning down to 14px)
+                if bbox.width < 14 or bbox.height < 14:
                     continue
                 if bbox.width > (w * 0.70) or bbox.height > (h * 0.70):
                     continue
 
-                # Guard 3: Aspect ratio check (road signs are roughly 1:1, triangles/circles/octagons)
-                aspect_ratio = bbox.width / max(1, bbox.height)
-                if aspect_ratio < 0.45 or aspect_ratio > 2.2:
+                # Guard 3: Aspect-Ratio Clamping (strict square-ish priors 0.75 <= W/H <= 1.33 to suppress utility poles)
+                aspect_ratio = bbox.aspect_ratio
+                if aspect_ratio < 0.75 or aspect_ratio > 1.33:
                     continue
 
                 detections.append(DetectionResult(
@@ -156,9 +156,9 @@ class YOLODetector(BaseDetector):
                 if box_area > (frame_area * 0.18):
                     continue
 
-                # Guard 2: Aspect ratio consistency (circles, octagons, triangles, diamonds, standard rectangles)
+                # Guard 2: Aspect-Ratio Clamping (strict square-ish priors 0.75 <= W/H <= 1.33)
                 aspect_ratio = bw / float(bh)
-                if aspect_ratio < 0.52 or aspect_ratio > 1.88:
+                if aspect_ratio < 0.75 or aspect_ratio > 1.33:
                     continue
 
                 # Guard 3: Geometric Solidity & Extent (rejects wispy, hollow human/room lighting contours)

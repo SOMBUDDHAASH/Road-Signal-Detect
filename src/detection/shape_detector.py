@@ -99,7 +99,7 @@ class RobustTrafficSignDetector(BaseDetector):
             aspect_ratio = float(bw) / float(bh)
 
             # Circular (circularity > 0.60) or Triangular / Octagonal signs (aspect ratio ~ 1.0)
-            if 0.70 <= aspect_ratio <= 1.40:
+            if 0.75 <= aspect_ratio <= 1.33:
                 approx = cv2.approxPolyDP(cnt, 0.04 * peri, True)
                 num_v = len(approx)
 

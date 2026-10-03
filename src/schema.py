@@ -53,6 +53,10 @@ class BoundingBox:
     def center(self) -> Tuple[int, int]:
         return (self.x1 + self.width // 2, self.y1 + self.height // 2)
 
+    @property
+    def aspect_ratio(self) -> float:
+        return self.width / max(1.0, float(self.height))
+
     def to_xyxy(self) -> Tuple[int, int, int, int]:
         return (self.x1, self.y1, self.x2, self.y2)
 
