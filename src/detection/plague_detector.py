@@ -45,7 +45,8 @@ class PlagueSecondaryDetector:
     def detect(
         self,
         image: np.ndarray,
-        conf_threshold: float = 0.35
+        conf_threshold: float = 0.35,
+        enable_ocr: Optional[bool] = None
     ) -> List[Tuple[DetectionResult, ClassificationResult]]:
         """
         Execute the plague spreading model across all registered color pairs.
@@ -142,8 +143,11 @@ class PlagueSecondaryDetector:
                 bbox = BoundingBox(bx, by, bx + bw, by + bh)
 
                 # Stage 4: OCR Number & Text Inspection on Surviving Plagues
+                use_ocr = self.enable_ocr if enable_ocr is None else enable_ocr
                 detected_text: Optional[SignTextResult] = None
-                if self.enable_ocr and self.ocr_engine:
+                if use_ocr:
+                    if self.ocr_engine is None:
+                        self.ocr_engine = RoadSignOCREngine()
                     detected_text = self.ocr_engine.detect(crop_bgr)
 
                 # Map to GTSRB & 100 Signs taxonomy

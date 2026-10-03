@@ -72,3 +72,89 @@ def test_pipeline_still_image_mode_bypasses_tracking():
     assert isinstance(result, PipelineResult)
     assert result.annotated_frame.shape == frame.shape
 
+
+def test_pipeline_secondary_toggles_initialization():
+    """Verify TrafficSignPipeline initializes and respects secondary toggles."""
+    p_all_on = TrafficSignPipeline.create(
+        mode="mock",
+        enable_plague_detector=True,
+        enable_ocr=True,
+        enable_stage2_proposals=True,
+        enable_semantic_verification=True
+    )
+    assert p_all_on.enable_plague_detector is True
+    assert p_all_on.enable_ocr is True
+    assert p_all_on.enable_stage2_proposals is True
+    assert p_all_on.enable_semantic_verification is True
+    assert p_all_on.secondary_detector is not None
+
+    p_all_off = TrafficSignPipeline.create(
+        mode="mock",
+        enable_plague_detector=False,
+        enable_ocr=False,
+        enable_stage2_proposals=False,
+        enable_semantic_verification=False
+    )
+    assert p_all_off.enable_plague_detector is False
+    assert p_all_off.enable_ocr is False
+    assert p_all_off.enable_stage2_proposals is False
+    assert p_all_off.enable_semantic_verification is False
+    assert p_all_off.secondary_detector is None
+
+
+def test_pipeline_pure_gtsrb_mode_disables_secondary_fallback():
+    """When secondary methods are toggled off, no secondary fallback should occur on empty primary results."""
+    from src.detection.mock import MockDetector
+    from src.classification.mock import MockClassifier
+
+    class EmptyDetector(MockDetector):
+        def detect(self, image, conf_threshold=0.5, **kwargs):
+            return []
+
+    empty_det = EmptyDetector()
+    classifier = MockClassifier()
+
+    # Test with plague enabled: empty primary triggers secondary search
+    p_secondary_on = TrafficSignPipeline(
+        detector=empty_det,
+        classifier=classifier,
+        enable_plague_detector=True,
+        enable_tracking=False
+    )
+    assert p_secondary_on.enable_plague_detector is True
+
+    # Test with plague disabled (Pure GTSRB mode): returns 0 detections
+    p_secondary_off = TrafficSignPipeline(
+        detector=empty_det,
+        classifier=classifier,
+        enable_plague_detector=False,
+        enable_ocr=False,
+        enable_stage2_proposals=False,
+        enable_semantic_verification=False,
+        enable_tracking=False
+    )
+    frame = np.full((300, 300, 3), 120, dtype=np.uint8)
+    res_off = p_secondary_off.process_frame(frame)
+    assert res_off.num_signs_detected == 0
+    assert len(res_off.detections) == 0
+
+
+def test_yolo_and_standalone_stage2_toggle():
+    """Verify YOLODetector and StandaloneYOLODetector support enable_stage2_proposals."""
+    from src.detection.yolo import YOLODetector
+    from modules.B_detection.detector import StandaloneYOLODetector
+
+    yolo = YOLODetector(enable_stage2_proposals=False)
+    assert yolo.enable_stage2_proposals is False
+
+    standalone = StandaloneYOLODetector(enable_stage2_proposals=False)
+    assert standalone.enable_stage2_proposals is False
+
+    # Dummy image inference with stage2 disabled
+    dummy = np.zeros((200, 200, 3), dtype=np.uint8)
+    res1 = yolo.detect(dummy, enable_stage2_proposals=False)
+    res2 = standalone.detect(dummy, enable_stage2_proposals=False)
+    assert isinstance(res1, list)
+    assert isinstance(res2, list)
+
+

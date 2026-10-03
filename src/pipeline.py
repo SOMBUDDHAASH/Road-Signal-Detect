@@ -58,7 +58,11 @@ class TrafficSignPipeline:
         crop_padding_ratio: float = 0.05,
         default_conf_threshold: float = 0.50,
         enable_tracking: bool = True,
-        enable_secondary_fallback: bool = True
+        enable_secondary_fallback: bool = True,
+        enable_plague_detector: bool = True,
+        enable_ocr: bool = True,
+        enable_stage2_proposals: bool = True,
+        enable_semantic_verification: bool = True
     ):
         self.detector = detector
         self.classifier = classifier
@@ -67,8 +71,16 @@ class TrafficSignPipeline:
         self.default_conf_threshold = default_conf_threshold
         self.enable_tracking = enable_tracking
         self.tracker = TemporalSignTracker() if enable_tracking else None
-        self.enable_secondary_fallback = enable_secondary_fallback
-        self.secondary_detector = PlagueSecondaryDetector(enable_ocr=True) if enable_secondary_fallback else None
+
+        # Perception Method Toggles
+        # Primary GTSRB deep learning models are prioritized and always active.
+        # Secondary fallback and augmentation methods can be independently toggled:
+        self.enable_plague_detector = enable_plague_detector and enable_secondary_fallback
+        self.enable_secondary_fallback = self.enable_plague_detector  # backward compatibility alias
+        self.enable_ocr = enable_ocr
+        self.enable_stage2_proposals = enable_stage2_proposals
+        self.enable_semantic_verification = enable_semantic_verification
+        self.secondary_detector = PlagueSecondaryDetector(enable_ocr=self.enable_ocr) if self.enable_plague_detector else None
 
         # Smoothing for FPS
         self._prev_frame_time = time.perf_counter()
@@ -104,11 +116,15 @@ class TrafficSignPipeline:
         self,
         frame: np.ndarray,
         conf_threshold: Optional[float] = None,
-        is_video: bool = True
+        is_video: bool = True,
+        enable_plague_detector: Optional[bool] = None,
+        enable_ocr: Optional[bool] = None,
+        enable_stage2_proposals: Optional[bool] = None,
+        enable_semantic_verification: Optional[bool] = None
     ) -> PipelineResult:
         """
         Processes a single image frame through the full pipeline:
-        1. Localize traffic signs (Detection)
+        1. Localize traffic signs (Detection) - Primary YOLO / GTSRB
         2. Crop and pad candidate regions
         3. Identify sign classes (Classification) with detector-classifier fusion
         4. Temporal tracking (for video) or direct confirmation (for still images)
@@ -120,9 +136,21 @@ class TrafficSignPipeline:
         conf_threshold = conf_threshold if conf_threshold is not None else self.default_conf_threshold
         h, w = frame.shape[:2]
 
-        # Stage 1: Detection
+        use_plague = self.enable_plague_detector if enable_plague_detector is None else enable_plague_detector
+        use_ocr = self.enable_ocr if enable_ocr is None else enable_ocr
+        use_stage2 = self.enable_stage2_proposals if enable_stage2_proposals is None else enable_stage2_proposals
+        use_verifier = self.enable_semantic_verification if enable_semantic_verification is None else enable_semantic_verification
+
+        # Stage 1: Detection (Primary GTSRB/YOLO Localization)
         t_det_start = time.perf_counter()
-        raw_detections: List[DetectionResult] = self.detector.detect(frame, conf_threshold=conf_threshold)
+        import inspect
+        sig = inspect.signature(self.detector.detect)
+        if "enable_stage2_proposals" in sig.parameters:
+            raw_detections: List[DetectionResult] = self.detector.detect(
+                frame, conf_threshold=conf_threshold, enable_stage2_proposals=use_stage2
+            )
+        else:
+            raw_detections: List[DetectionResult] = self.detector.detect(frame, conf_threshold=conf_threshold)
 
         # If image is already a cropped sign sample (< 150px) and detector found nothing, evaluate whole crop
         if not raw_detections and max(w, h) <= 150:
@@ -149,34 +177,42 @@ class TrafficSignPipeline:
                     valid_crops.append(crop)
                     valid_detections.append(det)
 
-        # Stage 3: Classification & Smart Multi-Stage Fusion
+        # Stage 3: Classification & Smart Multi-Stage Fusion (Primary GTSRB Deep Learning)
         t_cls_start = time.perf_counter()
         pipeline_detections: List[PipelineDetection] = []
 
         if valid_crops:
             # Batch classification if supported, else sequential
             cls_results: List[ClassificationResult] = self.classifier.classify_batch(valid_crops)
-            from src.detection.ocr_engine import get_ocr_engine
-            from src.classification.semantic_verifier import get_semantic_verifier
-            ocr_engine = get_ocr_engine()
-            verifier = get_semantic_verifier()
+            ocr_engine = None
+            if use_ocr:
+                from src.detection.ocr_engine import get_ocr_engine
+                ocr_engine = get_ocr_engine()
+
+            verifier = None
+            if use_verifier:
+                from src.classification.semantic_verifier import get_semantic_verifier
+                verifier = get_semantic_verifier()
 
             for det, cls_res, crop in zip(valid_detections, cls_results, valid_crops):
-                # 1. Run character & numeral OCR on crop
-                ocr_res = ocr_engine.detect(crop)
+                # 1. Run character & numeral OCR on crop if enabled
+                ocr_res = ocr_engine.detect(crop) if ocr_engine is not None else None
 
-                # 2. Semantic & Physical Consistency Verification
-                verified = verifier.verify_and_correct(
-                    crop=crop,
-                    raw_class_id=cls_res.class_id,
-                    raw_confidence=cls_res.confidence,
-                    raw_probs=getattr(cls_res, "probs", None),
-                    ocr_text=ocr_res.raw_string if ocr_res else None,
-                    ocr_number=ocr_res.detected_number if ocr_res else None,
-                    ocr_word=ocr_res.detected_word if ocr_res else None
-                )
-                if verified is not None:
-                    cls_res = verified
+                # 2. Semantic & Physical Consistency Verification if enabled
+                if verifier is not None:
+                    verified = verifier.verify_and_correct(
+                        crop=crop,
+                        raw_class_id=cls_res.class_id,
+                        raw_confidence=cls_res.confidence,
+                        raw_probs=getattr(cls_res, "probs", None),
+                        ocr_text=ocr_res.raw_string if ocr_res else None,
+                        ocr_number=ocr_res.detected_number if ocr_res else None,
+                        ocr_word=ocr_res.detected_word if ocr_res else None
+                    )
+                    if verified is not None:
+                        cls_res = verified
+                    elif cls_res.class_id < 0:
+                        continue
                 elif cls_res.class_id < 0:
                     continue
 
@@ -186,7 +222,7 @@ class TrafficSignPipeline:
                     yolo_cid, yolo_name, yolo_cat = YOLO_LABEL_TO_GTSRB[det.detector_label]
                     # If YOLO predicted a speed limit but OCR found NO digits and confidence is moderate,
                     # avoid false speed limit assignment on symbol prohibitory signs
-                    if yolo_name.startswith("Speed limit") and (ocr_res is None or ocr_res.detected_number is None) and det.confidence < 0.72:
+                    if yolo_name.startswith("Speed limit") and use_ocr and (ocr_res is None or ocr_res.detected_number is None) and det.confidence < 0.72:
                         cls_res = ClassificationResult(
                             class_id=15,
                             class_name="No vehicles / Motorcycles prohibited",
@@ -211,10 +247,12 @@ class TrafficSignPipeline:
         cls_latency_ms = (time.perf_counter() - t_cls_start) * 1000.0
 
         # Stage 3.5: Secondary Plague Detector & OCR Fallback
-        # Triggered when primary detector + classifier returned 0 verified signs
-        if not pipeline_detections and self.enable_secondary_fallback and self.secondary_detector:
+        # Triggered ONLY when primary detector + classifier returned 0 verified signs AND plague is toggled ON
+        if not pipeline_detections and use_plague:
+            if self.secondary_detector is None:
+                self.secondary_detector = PlagueSecondaryDetector(enable_ocr=use_ocr)
             t_sec_start = time.perf_counter()
-            secondary_pairs = self.secondary_detector.detect(frame, conf_threshold=conf_threshold)
+            secondary_pairs = self.secondary_detector.detect(frame, conf_threshold=conf_threshold, enable_ocr=use_ocr)
             for s_det, s_cls in secondary_pairs:
                 sx1, sy1, sx2, sy2 = s_det.bbox.clamp(w, h).to_xyxy()
                 s_crop = frame[sy1:sy2, sx1:sx2].copy()

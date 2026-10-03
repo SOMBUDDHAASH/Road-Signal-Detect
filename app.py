@@ -111,6 +111,11 @@ st.markdown("""
         color: #991B1B;
         border-color: #FECACA;
     }
+    .zen-pill-inactive {
+        background: #F8FAFC;
+        color: #94A3B8;
+        border-color: #E2E8F0;
+    }
     .zen-dot {
         width: 6px;
         height: 6px;
@@ -246,18 +251,33 @@ def get_active_pipeline(
     padding_ratio: float = 0.05,
     custom_yolo_path: Optional[str] = None,
     custom_cls_path: Optional[str] = None,
-    enable_secondary_fallback: bool = True
+    enable_plague_detector: bool = True,
+    enable_ocr: bool = True,
+    enable_stage2_proposals: bool = True,
+    enable_semantic_verification: bool = True
 ) -> TrafficSignPipeline:
     """Builds the active pipeline with hot-swappable detector and classifier models."""
     # Detector selection
     if detector_choice == "Custom Uploaded YOLO" and custom_yolo_path and os.path.exists(custom_yolo_path):
-        detector = YOLODetector(model_path=custom_yolo_path, auto_fallback=True)
+        detector = YOLODetector(
+            model_path=custom_yolo_path,
+            auto_fallback=True,
+            enable_stage2_proposals=enable_stage2_proposals
+        )
     elif detector_choice.startswith("Fine-tuned Traffic YOLO"):
-        detector = YOLODetector(model_path=os.path.join("weights", "detection", "best.pt"), auto_fallback=True)
+        detector = YOLODetector(
+            model_path=os.path.join("weights", "detection", "best.pt"),
+            auto_fallback=True,
+            enable_stage2_proposals=enable_stage2_proposals
+        )
     elif detector_choice.startswith("Robust Contour"):
         detector = RobustTrafficSignDetector()
     else:
-        detector = YOLODetector(model_path=os.path.join("weights", "detection", "best.pt"), auto_fallback=True)
+        detector = YOLODetector(
+            model_path=os.path.join("weights", "detection", "best.pt"),
+            auto_fallback=True,
+            enable_stage2_proposals=enable_stage2_proposals
+        )
 
     # Classifier selection
     if classifier_choice == "Custom Uploaded Classifier" and custom_cls_path and os.path.exists(custom_cls_path):
@@ -278,7 +298,10 @@ def get_active_pipeline(
         classifier=classifier,
         crop_padding_ratio=padding_ratio,
         enable_tracking=True,
-        enable_secondary_fallback=enable_secondary_fallback
+        enable_plague_detector=enable_plague_detector,
+        enable_ocr=enable_ocr,
+        enable_stage2_proposals=enable_stage2_proposals,
+        enable_semantic_verification=enable_semantic_verification
     )
 
 
@@ -387,22 +410,57 @@ def main():
 
     conf_thresh = st.sidebar.slider("Confidence Gate", min_value=0.10, max_value=0.95, value=0.35, step=0.05)
     padding_ratio = st.sidebar.slider("Crop Margin Ratio", min_value=0.0, max_value=0.20, value=0.05, step=0.02)
-    enable_plague = st.sidebar.checkbox(
-        "🦠 Plague Secondary Detector + OCR",
+
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### ⚙️ Perception Pipeline Controls")
+
+    # Primary GTSRB Deep Learning Callout Card (Always Prioritized)
+    st.sidebar.markdown("""
+    <div style="background-color: rgba(34, 197, 94, 0.07); border: 1px solid rgba(34, 197, 94, 0.28); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px;">
+        <div style="color: #15803d; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">Primary System (Always Prioritized)</div>
+        <div style="color: #14532d; font-size: 0.85rem; font-weight: 600; margin-top: 3px;">⚡ GTSRB 43-Class CNN + YOLO</div>
+        <div style="color: #166534; font-size: 0.74rem; margin-top: 2px;">Primary deep learning models execute first on every input frame.</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.sidebar.markdown("<div style='font-size:0.78rem; font-weight:600; text-transform: uppercase; letter-spacing:0.04em; color:#64748B; margin: 10px 0 6px 0;'>Secondary Methods & Fallback Toggles:</div>", unsafe_allow_html=True)
+
+    toggle_plague = st.sidebar.toggle(
+        "🦠 Plague Cellular Detector",
         value=True,
-        help="Cellular automaton color-pair spreading, unexpected-color cancellation, and OCR number/text detection when primary model returns 0 signs."
+        help="Cellular automaton color-pair floodfill fallback. Triggers only when primary GTSRB model finds 0 signs."
+    )
+    toggle_ocr = st.sidebar.toggle(
+        "🔤 Alphanumeric OCR Engine",
+        value=True,
+        help="Scans detected sign crops for speed limit numerals and highway text indicators."
+    )
+    toggle_stage2 = st.sidebar.toggle(
+        "📐 Stage 2 Shape & Color Proposals",
+        value=True,
+        help="Geometric shape & color proposals. When OFF, detector operates in 100% strict pure YOLO localization."
+    )
+    toggle_verifier = st.sidebar.toggle(
+        "🛡️ Semantic Consistency Gate",
+        value=True,
+        help="Verifies detected sign colors & geometries against GTSRB taxonomy to prevent false alarms."
     )
 
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 📁 System Architecture")
-    st.sidebar.markdown("""
+    plague_badge_cls = "zen-pill-active" if toggle_plague else "zen-pill-inactive"
+    ocr_badge_cls = "zen-pill-active" if toggle_ocr else "zen-pill-inactive"
+    stage2_badge_cls = "zen-pill-active" if toggle_stage2 else "zen-pill-inactive"
+    st.sidebar.markdown(f"""
     <div style="display:flex; flex-direction:column; gap:6px;">
         <span class="zen-pill zen-pill-active"><span class="zen-dot"></span> Pipeline: Standalone Ready</span>
         <span class="zen-pill zen-pill-active"><span class="zen-dot"></span> Member A: Data Pipeline</span>
         <span class="zen-pill zen-pill-active"><span class="zen-dot"></span> Member B: YOLOv8 Detector</span>
         <span class="zen-pill zen-pill-active"><span class="zen-dot"></span> Member C: GTSRB 43 Classifier</span>
         <span class="zen-pill zen-pill-active"><span class="zen-dot"></span> Member D: Master Integration</span>
-        <span class="zen-pill zen-pill-active"><span class="zen-dot"></span> Engine: Plague Model & OCR</span>
+        <span class="zen-pill {plague_badge_cls}"><span class="zen-dot"></span> Secondary: Plague Fallback ({'Active' if toggle_plague else 'Bypassed'})</span>
+        <span class="zen-pill {ocr_badge_cls}"><span class="zen-dot"></span> Secondary: OCR Engine ({'Active' if toggle_ocr else 'Bypassed'})</span>
+        <span class="zen-pill {stage2_badge_cls}"><span class="zen-dot"></span> Proposals: Stage 2 ({'Active' if toggle_stage2 else 'Pure YOLO'})</span>
     </div>
     """, unsafe_allow_html=True)
 
@@ -428,7 +486,10 @@ def main():
         padding_ratio=padding_ratio,
         custom_yolo_path=st.session_state.custom_yolo_path,
         custom_cls_path=st.session_state.custom_classifier_path,
-        enable_secondary_fallback=enable_plague
+        enable_plague_detector=toggle_plague,
+        enable_ocr=toggle_ocr,
+        enable_stage2_proposals=toggle_stage2,
+        enable_semantic_verification=toggle_verifier
     )
     logger = st.session_state.event_logger
 
