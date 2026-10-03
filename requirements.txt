@@ -12,6 +12,11 @@ fastapi>=0.100.0
 uvicorn>=0.23.0
 python-multipart>=0.0.9
 
+# Continuous Video & Stream Utilities
+yt-dlp>=2024.0.0
+mss>=9.0.0
+httpx>=0.25.0
+
 # Deep Learning Frameworks (Optional for Mock mode, Required for Model Adapters)
 # torch>=2.0.0
 # torchvision>=0.15.0
