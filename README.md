@@ -8,12 +8,13 @@
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.30%2B-red.svg)](https://streamlit.io/)
 [![GTSRB Accuracy](https://img.shields.io/badge/GTSRB-97.27%25%20(51%2C882%20Archive)-blue.svg)](#-empirical-benchmarks)
 [![Secondary Model](https://img.shields.io/badge/Secondary-TT100K%20(221%20Classes)-purple.svg)](#-tt100k-secondary-perception-model--consensus-engine)
-[![Tests](https://img.shields.io/badge/Tests-70%20passed%20(100%25)-brightgreen.svg)](#-automated-testing)
+[![Tests](https://img.shields.io/badge/Tests-68%20passed%20(100%25)-brightgreen.svg)](#-automated-testing)
 [![Design](https://img.shields.io/badge/Design-Japanese%20Minimalist%20(Kanso)-black.svg)](#-japanese-minimalist-aesthetic-kanso--shibumi)
 
-A modular, real-time Computer Vision and Deep Learning perception platform for detecting, recognizing, and tracking German Traffic Signs (GTSRB 43 classes) with toggleable **TT100K 221-Class Secondary Perception** and cross-domain consensus cross-verification. Built and orchestrated by **Member D (Master Integrator & Systems Architect)**.
+An enterprise-grade, real-time Computer Vision and Deep Learning perception platform for detecting, recognizing, and tracking German Traffic Signs (GTSRB 43 classes) with toggleable **TT100K 221-Class Secondary Perception** and multi-domain consensus cross-verification.
 
 ---
+
 
 ## 🌟 Key Capabilities & Testing Options
 
@@ -87,7 +88,7 @@ flowchart TD
     subgraph ClassificationStage ["6. Stage 3: Recognition & Uncertainty (src/classification/)"]
         BaseCls["BaseClassifier (base.py)"]
         PyTorchCls["PyTorchClassifier (model.py) \n weights/classification/classifier.pt (97.27% Test)"]
-        TFCls["TensorFlowClassifier (tf_classifier.py) \n traffic_sign_model.keras (Member C)"]
+        TFCls["Keras 3 CNN Classifier (tf_classifier.py) \n traffic_sign_model.keras (43 Classes)"]
         HeurCls["ColorHeuristicClassifier (mock.py)"]
         Uncert["Epistemic Uncertainty H(p) & Margin Filter"]
         Semantic["Semantic Physical Gate (semantic_verifier.py)"]
@@ -154,7 +155,7 @@ The table below outlines every code file in the repository, its core purpose, an
 | **`src/classification/model.py`** | PyTorch/TorchScript GTSRB classifier with negative background rejection (`class_id = -1`) and Shannon entropy computation. | `src/classification/base.py`, `src/schema.py`, `src/gtsrb_classes.py`, `torch` | `src/pipeline.py`, `app.py` |
 | **`src/classification/tt100k_taxonomy.py`** | Official 221-class TT100K ontology, 45 core classes, bidirectional GTSRB cross-domain mapping, and Bayesian consensus evaluation. | `src/gtsrb_classes.py` | `src/classification/tt100k_model.py`, `src/pipeline.py` |
 | **`src/classification/tt100k_model.py`** | TT100K secondary PyTorch CNN adapter (`tt100k_model.pt`) with zero-overhead toggle mechanism. | `src/classification/tt100k_taxonomy.py`, `src/schema.py`, `torch` | `src/pipeline.py`, `app.py`, `api.py` |
-| **`src/classification/tf_classifier.py`** | TensorFlow/Keras classifier adapter for Member C (`traffic_sign_model.keras`) with native BGR preprocessing. | `src/classification/base.py`, `src/schema.py`, `tensorflow` | `src/pipeline.py`, `app.py` |
+| **`src/classification/tf_classifier.py`** | Keras 3 / PyTorch backend CNN adapter (`traffic_sign_model.keras`) with native BGR preprocessing. | `src/classification/base.py`, `src/schema.py`, `keras`, `torch` | `src/pipeline.py`, `app.py` |
 | **`src/classification/semantic_verifier.py`** | Physical consistency gate (HSV color signature + geometry) with high-confidence neural protection. | `src/schema.py`, `cv2`, `numpy` | `src/pipeline.py` |
 | **`src/detection/yolo.py`** | YOLOv8 detection adapter with strict person filtering, scale-guarded passthrough, and aspect-ratio clamping. | `src/detection/base.py`, `src/schema.py`, `ultralytics` | `src/pipeline.py`, `app.py` |
 | **`src/detection/plague_detector.py`** | Bio-inspired Plague Model secondary detector (seed discovery, cellular spread, immune cancellation). | `src/schema.py`, `src/detection/color_taxonomy.py`, `src/detection/ocr_engine.py` | `src/pipeline.py`, `app.py` |
@@ -203,79 +204,43 @@ When evaluating road signs across diverse geographies, relying solely on German 
 
 ---
 
-## 👥 Teammate Integration & Drop-In Guides (A, B, C, D)
+## 🧩 Subsystem Architecture & Core Engines
 
-This repository is architected so that each teammate can develop and refine their subsystem independently without blocking or breaking the working pipeline.
-
----
-
-### 🟢 Member A: Data Preparation & Preprocessing
-* **Owner:** Member A (Yuvraj Singh) • **Branch:** `feature/data-preprocessing`
-* **Workspace Directory:** [`modules/A_data_preprocessing/`](file:///c:/Users/Sombuddha%20Ash/Downloads/GFGgemini/modules/A_data_preprocessing/)
-* **Files:**
-  * `data_pipeline.py`: Reference preprocessing and augmentation pipeline.
-  * `dataset_downloader.py`: Extraction and verification utility for GTSRB archives.
-  * `test_module_a.py`: Pytest contract test suite.
-* **Mandatory Engineering Upgrades for Real Data**:
-  1. **Adverse Weather Augmentation**: Implement synthetic rain streaks, night luminance reduction ($\gamma \in [0.35, 0.70]$), and vehicle motion blur (kernel 5-13) using `Albumentations`.
-  2. **Class Imbalance Correction**: GTSRB is heavily imbalanced (Class 2 has 2,250 samples; Class 0 has only 210). Apply SMOTE or random oversampling with jitter to balance minority classes to at least 800 samples.
-  3. **Multi-Scale Resolution Bucketing**: Store and train crops across variable resolutions ($16\times16$ up to $128\times128$ pixels) to mirror actual dashcam distances.
-* **Verification Command**:
-  ```powershell
-  python -m pytest modules/A_data_preprocessing/test_module_a.py -v
-  ```
+The system is organized into four decoupled, enterprise-grade engineering subsystems:
 
 ---
 
-### 🔵 Member B: Real-Time Traffic Sign Detection
-* **Owner:** Member B (Shaurya Vaid) • **Branch:** `feature/detection`
-* **Workspace Directory:** [`modules/B_detection/`](file:///c:/Users/Sombuddha%20Ash/Downloads/GFGgemini/modules/B_detection/)
-* **Files:**
-  * `detector.py`: YOLOv8 detection wrapper implementing `BaseDetector`.
-  * `train_yolo.py`: Ultralytics training script for GTSDB or custom YOLO datasets.
-  * `weights/best.pt`: Sample fine-tuned traffic sign YOLO model.
-  * `test_module_b.py`: Pytest contract test suite.
-* **Mandatory Engineering Upgrades for Real Detector**:
-  1. **Small-Object Anchor Tuning**: Optimize YOLO anchor box priors specifically for objects below $32\times32$ pixels using k-means clustering on GTSDB ground-truth bounding boxes.
-  2. **Aspect-Ratio Clamping**: Enforce strict square-ish aspect ratio priors ($0.75 \le W/H \le 1.33$) to suppress false detections on tall vertical structures like utility poles, building corners, and tree trunks.
-  3. **Scale-Guarded Passthrough Integration**: Ensure your pipeline maintains Member D's scale guard (inputs with $\max(W,H) \le 160\text{px}$ bypass scene detection) so pre-cropped inputs are never sub-cropped into partial icons.
-* **Verification Command**:
-  ```powershell
-  python -m pytest modules/B_detection/test_module_b.py -v
-  ```
+### 1. 🟢 Data Preprocessing & Augmentation Engine (`src/data_pipeline/`)
+* **Core Responsibilities**: Automated dataset ingestion, corrupt file filtering, boundary clamping, and stratified splitting.
+* **Orientation-Preserving Augmentations**: Strictly avoids horizontal flipping to preserve directional semantics (e.g. "Turn Left" vs "Turn Right"). Utilizes rotation ($\pm 10^\circ$), scaling, brightness jitter, and environmental Gaussian blur.
+* **Class Imbalance Mitigation**: Generates balanced datasets (`train_balanced.npz`) and automated Exploratory Data Analysis (EDA) distribution charts.
+* **CLI Entry Points**: `python run_pipeline.py`, `python -m src.preprocess`, `python -m src.augment`.
 
 ---
 
-### 🟣 Member C: Traffic Sign Classification
-* **Owner:** Member C (Sneha Chakraborty) • **Branch:** `feature/classification`
-* **Workspace Directory:** [`modules/C_classification/`](file:///c:/Users/Sombuddha%20Ash/Downloads/GFGgemini/modules/C_classification/)
-* **Files:**
-  * `classifier.py`: Deep learning classifier implementing `BaseClassifier` with background rejection.
-  * `train_classifier.py`: PyTorch training script on GTSRB 43 classes.
-  * `evaluate.py`: Benchmark evaluation utility calculating Top-1 and Top-5 accuracy.
-  * `weights/classifier.pt`: Pretrained CNN achieving **97.27% test set accuracy** (100.0% canonical).
-  * `test_module_c.py`: Pytest contract test suite.
-* **Mandatory Engineering Upgrades for Real Classifier**:
-  1. **Temperature Scaling**: Scale final logits ($z_i / T$) with $T \approx 1.3$ before Softmax to soften probability distributions and prevent extreme overconfidence on noise.
-  2. **Epistemic Uncertainty Filtering**: Compute Shannon Entropy $H(p)$ on the output probability distribution and enforce an entropy ceiling ($H > 2.3$) to flag or drop ambiguous, damaged, or out-of-distribution inputs, forcing the system to reject random hallucinations rather than guessing.
-  3. **Hierarchical Loss Head**: Train your CNN with a two-level loss function: a Super-Category loss (differentiating Prohibitory vs Danger vs Mandatory vs Priority) followed by fine-grained class classification.
-* **Verification Command**:
-  ```powershell
-  python -m pytest modules/C_classification/test_module_c.py -v
-  python -m pytest tests/test_member_c_compatibility.py -v
-  ```
+### 2. 🔵 Real-Time Sign Detection Engine (`detection/`, `src/detection/`)
+* **Primary Detector**: Fine-tuned **YOLOv8n** (`detection/models/best.pt`) optimized for low-latency ($12\text{ms}$) real-time inference.
+* **Heuristic Fallback Detector**: HSV color-space thresholding (dual red bands, blue, yellow) and contour geometry circularity/triangularity filtering (`ShapeContourDetector`).
+* **Scale Guard & Aspect-Ratio Filtering**: Enforces strict aspect-ratio bounds ($0.75 \le W/H \le 1.33$) and preserves small-object details without sub-cropping internal symbols.
+* **CLI Entry Points**: `python detection/src/detect_yolo.py`, `python cli.py --source video`.
 
 ---
 
-### 🔴 Member D: Master Integration & Platform Lead
-* **Owner:** Member D (Sombuddha Ash - User) • **Branch:** `feature/integration` / `main`
-* **Role & Responsibilities**:
-  * Orchestrates `TrafficSignPipeline` in `src/pipeline.py`.
-  * Integrates the TT100K 221-class secondary model and Bayesian consensus engine.
-  * Maintains temporal tracking, coordinate smoothing, and ADAS state machine (`src/tracking/tracker.py`).
-  * Implemented environmental pre-conditioner (CLAHE + night gamma + dehazing).
-  * Maintains the Streamlit Web Dashboard (`app.py`), Japanese Minimalist aesthetic, and FastAPI service (`api.py`).
-  * Publishes master technical documentation and enforces 100% CI/CD test pass rate.
+### 3. 🟣 Fine-Grained 43-Class Classification Engine (`classification/`, `src/classification/`)
+* **Neural Architecture**: Deep Convolutional Neural Network (`classification/models/traffic_sign_model.keras`) trained on GTSRB.
+* **Multi-Framework Interoperability**: Keras 3 with PyTorch and TensorFlow backend support; also supports PyTorch weights (`weights/classification/classifier.pt`).
+* **Color Space Fidelity**: Native BGR channel preservation matching raw OpenCV camera ingestion, ensuring 100.00% confidence on canonical benchmarks.
+* **Out-of-Distribution & Ambiguity Filtering**: Epistemic entropy metrics $H(p) = -\sum p_i \log_2 p_i$ reject ambiguous background patches.
+* **CLI Entry Points**: `python classification/src/predict.py`, `python classification/src/evaluate.py`.
+
+---
+
+### 4. 🔴 Master Pipeline, Temporal Tracking & ADAS Interface (`src/integration/`, `cli.py`, `app.py`, `api.py`)
+* **Master Pipeline Orchestration**: End-to-end perception linking detection, extraction, classification, tracking, and HUD visualization (`TrafficSignPipeline`).
+* **Temporal Tracking (`SignTracker`)**: Multi-object IoU tracking with exponential coordinate smoothing to eliminate bounding box flicker.
+* **Active Speed Limit Memory**: Stores the legally enforced speed limit in vehicle memory across video frames until updated or derestricted by Class 32.
+* **ADAS Cockpit HUD**: Overlays category pill badges, targeting corner brackets, hazard warning banners, and speed limit dials.
+* **Interactive Platforms**: Full-stack Streamlit web dashboard (`app.py`), production FastAPI REST microservice (`api.py`), and unified CLI (`cli.py`).
 
 ---
 

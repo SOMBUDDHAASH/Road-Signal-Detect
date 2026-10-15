@@ -1,26 +1,22 @@
 # Dataset Management & Benchmark Loaders (`src/dataset/`)
 
-This directory houses the dataset parsing, ground-truth verification, and custom dataset management subsystems developed by **Member D (Integration Lead)** and used by **Member A (Data Lead)**.
+This directory houses the dataset verification, ground-truth benchmark mapping, and custom regional dataset parsing subsystems.
 
 ---
 
-## 📄 File Index & Detailed Descriptions
+## 📄 File Index & Specifications
 
 ### 1. `benchmark_loader.py`
-* **Purpose**: Parses official GTSRB benchmark ground truth files (`Meta.csv`, `Test.csv`, `Train.csv`) and matches test samples against true labels.
+* **Purpose**: Ingests and parses official GTSRB benchmark annotations (`Meta.csv`, `Test.csv`, `Train.csv`) for ground-truth validation.
 * **Key Components**:
-  * `GroundTruthSign`: Dataclass containing `filename`, `width`, `height`, ground-truth ROI coordinates `(roi_x1, roi_y1, roi_x2, roi_y2)`, `class_id`, `class_name`, `category`, `shape_id`, and `color_id`.
-  * `BenchmarkDataLoader`: Loads all annotations into memory maps:
-    * `get_ground_truth(filename)`: Looks up ground truth for any sample file (e.g. `00000.png` or `class_14_sample_1.png`).
-* **Interconnections**: Used by Option 1 in `app.py` and `modules/C_classification/evaluate.py` to calculate exact benchmark precision and recall.
+  * `GroundTruthSign`: Dataclass containing image dimensions, ground-truth ROI bounding boxes `(roi_x1, roi_y1, roi_x2, roi_y2)`, class ID, semantic name, sign category, shape, and color codes.
+  * `BenchmarkDataLoader`: Memory-mapped lookup table linking image filenames to verified ground truth for computing precision, recall, and confusion matrices.
 
 ---
 
 ### 2. `custom_dataset.py`
-* **Purpose**: Allows users and enterprise teams to upload custom regional datasets (Indian, US MUTCD, industrial signs) in ZIP format and train on them dynamically.
-* **Key Components**:
-  * `CustomDatasetManager`:
-    * Unpacks ZIP files into `data/custom/<dataset_name>/`.
-    * Scans folder structures (`class_name/image.png`), assigns incremental class IDs, and saves JSON class mappings.
-    * `load_dataset_arrays()`: Preprocesses images to $(32 \times 32)$ RGB float32 arrays ready for training.
-* **Interconnections**: Powers the "Custom Dataset & Training Engine" in `app.py`.
+* **Purpose**: Provides extensible support for custom regional datasets (Indian, US MUTCD, industrial safety signs) in standard ZIP format.
+* **Key Capabilities**:
+  * Dynamic archive extraction into `data/custom/<dataset_name>/`.
+  * Automatic directory scanning, label encoding, and metadata JSON serialization.
+  * Direct tensor loading for on-the-fly model adaptation.

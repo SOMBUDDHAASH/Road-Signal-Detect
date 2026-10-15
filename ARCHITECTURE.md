@@ -1,12 +1,12 @@
 # System Architecture & Technical Specifications
 
-**Road Traffic Sign Detection & Recognition System**  
-**Integration Lead (Member D)**: Sombuddha Ash  
-**Dataset**: German Traffic Sign Recognition Benchmark (GTSRB, 43 Classes)  
+**Autonomous Road Traffic Sign Detection & Recognition System**  
+**Lead Architect**: Sombuddha Ash  
+**Benchmark Datasets**: German Traffic Sign Recognition Benchmark (GTSRB, 43 Classes) & Tsinghua-Tencent 100K (TT100K, 221 Classes)  
 
 ---
 
-## 1. Domain Decomposition & Team Roles
+## 1. Subsystem Architecture & Perception Flow
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -16,46 +16,44 @@
                                     │
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│              Member A: Data Preprocessing & Augmentation               │
-│  - Dataset Ingestion (Kagglehub / Direct archive linking)             │
-│  - Corrupt Image Removal & Boundary Clamping                           │
-│  - Track-Aware Stratified Train/Val/Test Splitting (No Leakage)        │
-│  - Orientation-Preserving Augmentations (NO horizontal flips)          │
-│  - Class Balancing (train_balanced.npz) & EDA Generation               │
+│              Subsystem 1: Data Engineering & Augmentation              │
+│  - Automated Dataset Ingestion & Validation Protocols                  │
+│  - Corrupt Image Filtering & Coordinate Boundary Clamping              │
+│  - Track-Aware Stratified Train/Val/Test Splitting (Zero Leakage)      │
+│  - Orientation-Preserving Augmentations (No Illegal Horizontal Flips)  │
+│  - Class Distribution Balancing & Automated EDA Profiling              │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│                    Member B: Sign Detection Engine                     │
-│  - Fine-Tuned YOLOv8n (models/detection/best.pt)                       │
+│             Subsystem 2: Real-Time Sign Detection Engine               │
+│  - Fine-Tuned YOLOv8n Primary Detector (models/detection/best.pt)      │
 │  - Dynamic CLAHE Pre-conditioning (L channel adaptive equalization)   │
-│  - Multi-Scale Letterboxing (640x640 preserving aspect ratio)          │
+│  - Aspect-Preserving Multi-Scale Letterboxing (640x640)                │
 │  - Non-Maximum Suppression (IoU = 0.45, Conf = 0.25)                   │
 │  - Heuristic Color & Geometric Shape Fallback Detector                 │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │ Bounding Boxes [x1, y1, x2, y2]
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│                  Member C: Fine-Grained Classification                 │
+│          Subsystem 3: Fine-Grained Deep Neural Classification          │
 │  - 43-Class Convolutional Neural Network (traffic_sign_model.keras)    │
-│  - Keras 3 with Torch/TensorFlow Backend Interoperability              │
-│  - Input: 32x32x3 BGR float32 in [0, 1]                                │
-│  - Top-k Confidence Ranking & Category Categorization                  │
-│  - 99.34% Internal Test Accuracy / 95.20% Official GTSRB Accuracy     │
+│  - Multi-Backend Interoperability (PyTorch & Keras 3 Runtimes)         │
+│  - Standardized BGR Input Normalization [0, 1] for 32x32x3 Patches     │
+│  - Dual-Domain TT100K 221-Class Cross-Domain Consensus Verification    │
+│  - 99.34% Validation Accuracy / 95.20% Official GTSRB Test Accuracy    │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │ Classification Predictions & Probs
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│                  Member D: System Integration & Orchestration          │
-│  - End-to-End TrafficSignPipeline Orchestration                        │
-│  - Temporal Multi-Object Tracker (SignTrack continuity)                │
+│      Subsystem 4: Perception Integration, Tracking & Orchestration     │
+│  - End-to-End Multimodal Perception Pipeline Orchestrator              │
+│  - Temporal Multi-Object Tracker (SignTrack continuity & hysteresis)   │
 │  - Active Speed Limit Memory Zone Handler                              │
-│  - ADAS Cockpit HUD Visualizer (Category Pill Banners & Badges)        │
+│  - High-Resolution ADAS Cockpit HUD Visualizer (Dynamic Pill Badges)   │
 │  - Real-time Trip Telemetry Logger (JSON / CSV Exporter)               │
-│  - Streamlit Interactive Web Application (app.py)                      │
-│  - Production FastAPI REST Server (api.py)                             │
-│  - Unified Command-Line Interface (cli.py)                             │
-│  - Pytest Automated Quality Suite (15 Test Cases, 100% Pass)           │
+│  - Interactive Streamlit Dashboard (app.py) & FastAPI Server (api.py)  │
+│  - Comprehensive Test Suite (68 Automated Pytest Cases, 100% Pass)     │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -77,7 +75,7 @@ class BoundingBox:
     def crop(self, image: np.ndarray, padding: int = 0) -> Optional[np.ndarray]: ...
 ```
 
-### 2.2 Detection Result Contract (Member B -> Member D)
+### 2.2 Detection Result Contract (Detection Engine -> Orchestrator)
 ```python
 @dataclass
 class DetectionResult:
@@ -88,7 +86,7 @@ class DetectionResult:
     detector_source: str = "YOLOv8"
 ```
 
-### 2.3 Classification Result Contract (Member C -> Member D)
+### 2.3 Classification Result Contract (Classifier -> Orchestrator)
 ```python
 @dataclass
 class ClassificationResult:
@@ -100,7 +98,7 @@ class ClassificationResult:
     speed_limit: Optional[int]
 ```
 
-### 2.4 End-to-End Perception Contract (Member D -> Consumer / UI / API)
+### 2.4 End-to-End Perception Contract (Orchestration Pipeline -> Application / API)
 ```python
 @dataclass
 class IntegratedDetection:

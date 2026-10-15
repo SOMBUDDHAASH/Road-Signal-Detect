@@ -1,105 +1,50 @@
-# Module B: Real-Time Traffic Sign Detection
+# Real-Time Traffic Sign Detection Interface
 
-**Module Owner:** Member B (Shaurya Vaid)  
-**Git Branch:** `feature/detection`  
-**Downstream Consumers:** Member D (Integration pipeline, Tracker, Web/API Dashboards)
+This module provides a standalone object detection interface conforming to the `BaseDetector` contract, facilitating localized bounding box extraction and YOLOv8 inference.
 
 ---
 
-## 1. Overview & Current Reference Implementation
+## 📌 Architecture & Design Contract
 
-Member D (Integration Lead) has supplied a fully functional detection implementation in this directory:
-- `detector.py`: `StandaloneYOLODetector` class implementing `BaseDetector` from `src.detection.base`. It performs YOLOv8 inference, boundary clamping, aspect ratio filtering, and returns standardized `DetectionResult` objects.
-- `train_yolo.py`: Full Ultralytics training script that trains YOLO on traffic sign datasets and automatically copies `best.pt` into the weights directories.
-- `weights/best.pt`: Working pretrained YOLOv8 model from the internet ready for testing.
-- `test_module_b.py`: Pytest test suite testing contracts, edge cases, and confidence thresholds.
+The detection interface exposes a standardized, decoupled method signature ensuring compatibility across different detection backends:
 
----
-
-## 2. API Contract (What Member D's Pipeline Expects)
-
-Your detector must conform to `BaseDetector`:
 ```python
 from src.detection.base import BaseDetector
 from src.schema import DetectionResult, BoundingBox
 
-class YourDetector(BaseDetector):
+class StandaloneYOLODetector(BaseDetector):
     def detect(self, image: np.ndarray, conf_threshold: float = 0.5) -> List[DetectionResult]:
         """
+        Executes real-time sign localization on a single frame.
+
         Args:
-            image: BGR numpy uint8 image frame (H, W, 3).
-            conf_threshold: Minimum confidence score (0.0 to 1.0).
+            image: BGR numpy uint8 array (H, W, 3).
+            conf_threshold: Minimum confidence threshold (0.0 to 1.0).
+
         Returns:
-            List of DetectionResult containing:
-              - bbox: BoundingBox(x1, y1, x2, y2)
-              - confidence: float (0.0 to 1.0)
-              - detector_label: str (e.g. "traffic_sign")
-              - detector_class_id: int
+            List[DetectionResult]: Detected signs with bounding box coordinates,
+                                   confidence scores, and source labels.
         """
 ```
 
 ---
 
-## 3. Step-by-Step Instructions: How to Swap In Your Fine-Tuned Model
+## ⚙️ Key Technical Features
 
-### Option A: Direct Weights Drop-in (Easiest & Recommended)
-If you trained a standard YOLO model (YOLOv8n, YOLOv8s, YOLOv11):
-1. Copy your trained `best.pt` file into:
-   - `modules/B_detection/weights/best.pt`
-   - `weights/detection/best.pt`
-2. Run tests to confirm it loads:
-   ```bash
-   python -m pytest modules/B_detection/test_module_b.py -v
-   ```
-3. Launch the full application to see your detector in real-time:
-   ```bash
-   streamlit run app.py
-   ```
-
-### Option B: Custom Model Architecture or Algorithm
-If you are using Faster R-CNN, SSD, RT-DETR, or custom post-processing:
-1. Edit `modules/B_detection/detector.py`.
-2. Ensure your class implements `detect(self, image: np.ndarray, conf_threshold: float)` and outputs `List[DetectionResult]`.
-3. Update `src/detection/yolo.py` or import your class in `src/pipeline.py`.
+1. **Aspect-Ratio & Boundary Clamping**:
+   * Enforces coordinate bounds $[0 \le x_1 < x_2 \le W, 0 \le y_1 < y_2 \le H]$ to prevent array slicing exceptions.
+   * Filters out extreme aspect ratios to suppress false detections on utility poles or road markings.
+2. **Scale Guarding**:
+   * Ingested images with $\max(W, H) \le 160\text{px}$ are treated as pre-cropped sign patches, preventing the detector from sub-cropping internal sign symbols.
+3. **Weight Resolution**:
+   * Automatically resolves canonical weights at `weights/detection/best.pt` or `detection/models/best.pt`.
+   * Seamlessly falls back to heuristic shape detection if neural weights are not present.
 
 ---
 
-## 4. How to Train Your Model Using `train_yolo.py`
+## 💻 Standalone Verification
 
-You can use the included training utility:
+Execute unit tests verifying detection contracts, boundary handling, and confidence filtering:
 ```bash
-python modules/B_detection/train_yolo.py --data data/detection_data.yaml --epochs 30 --imgsz 640 --batch 16
+python -m pytest modules/B_detection/test_module_b.py -v
 ```
-Upon completion, the script automatically copies your best weights to both `modules/B_detection/weights/` and `weights/detection/`.
-
----
-
-## 5. Verification & Submission
-
-1. **Run tests:**
-   ```bash
-   python -m pytest modules/B_detection/test_module_b.py -v
-   python -m pytest tests/test_detection.py -v
-   ```
-2. **Commit your changes:**
-   ```bash
-   git add modules/B_detection/
-   git commit -m "feat(detection): integrate Member B fine-tuned YOLO detector"
-   git push origin feature/detection
-   ```
-
----
-
-## 6. Production Engineering Upgrades (Required for Real Pipeline)
-
-High-confidence misclassifications often occur because the detector passes a poorly cropped image (e.g., clipping part of the sign or capturing background clutter). When deploying the production detector, Member B must implement:
-
-1. **Small-Object Anchor Tuning**:
-   - Standard YOLO anchor priors are biased toward pedestrians and vehicles.
-   - Optimize YOLO anchor box priors specifically for objects below $32 \times 32$ pixels using k-means clustering on GTSDB ground-truth bounding boxes.
-2. **Aspect-Ratio Clamping**:
-   - Enforce strict square-ish aspect ratio priors ($0.75 \le W/H \le 1.33$) to suppress false detections on vertical structures like utility poles, building edges, and trees.
-3. **Scale-Guarded Passthrough Integration**:
-   - Ensure the pipeline handles pre-cropped inputs differently from full scene frames.
-   - Maintain Member D's scale guard (treating inputs with $\max(W,H) \le 160\text{px}$ as direct signs to prevent YOLO from sub-cropping internal icons).
-

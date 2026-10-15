@@ -1,91 +1,78 @@
-# Module A: Data Preprocessing & Augmentation Pipeline
+# Data Preprocessing & Augmentation Subsystem
 
-**Module Owner:** Member A (Yuvraj Singh)  
-**Git Branch:** `feature/data-preprocessing`  
-**Downstream Consumers:** Member C (Classifier training), Member B (YOLO dataset formatting), Member D (Integration pipeline)
+This module implements automated dataset acquisition, corrupt image filtering, ROI crop normalization, stratified dataset splitting, and semantic-preserving data augmentation for traffic sign recognition.
 
 ---
 
-## 1. Overview & Current Reference Implementation
+## 📌 Architecture & Responsibilities
 
-Member D (Integration Lead) has provided a fully operational, benchmark-compatible baseline in this directory:
-- `data_pipeline.py`: Contains `GTSRBDataPipeline`, which resizes, normalizes, converts BGR to RGB, transposes to `(C, H, W)`, performs data augmentations (rotation, brightness/contrast jitter, Gaussian blur), and generates Exploratory Data Analysis (EDA) class imbalance metrics.
-- `dataset_downloader.py`: Scans, validates, and extracts GTSRB dataset archives into `data/` (`Train/`, `Test/`, `Meta.csv`, `Train.csv`, `Test.csv`).
-- `test_module_a.py`: Pytest suite verifying contract adherence.
+The data preprocessing engine prepares standardized, noise-free, and balanced image datasets for deep learning training and validation:
+
+1. **Dataset Acquisition & Ingestion**: Direct loading or automated KaggleHub fetching (`meowmeowmeowmeowmeow/gtsrb-german-traffic-sign`).
+2. **Corrupt Image & Anomaly Removal**: Verifies header integrity, removes 0-byte or corrupted image files, and validates bounding box coordinate boundaries.
+3. **Track-Aware Stratified Splitting**: Splits datasets into Training (70%), Validation (15%), and Test (15%) partitions while ensuring images from the same physical road sign track are never split across train and test (preventing statistical data leakage).
+4. **Orientation-Preserving Augmentation**: Balances minority classes using geometric transformations while strictly avoiding horizontal flips.
+5. **Automated EDA Reporting**: Generates class frequency distributions and image galleries for exploratory data analysis.
 
 ---
 
-## 2. API Contract (What Your Code Must Deliver)
+## ⚠️ Semantic Augmentation Rule: Zero Horizontal Flips
 
-When you replace or enhance the baseline with your own preprocessing methods, ensure the following interfaces remain consistent:
+In standard computer vision (e.g. ImageNet), horizontal reflection is common. In traffic sign recognition, horizontal flipping **inverts semantic meaning**:
+* **Directional Reversal**: "Turn Left" (Class 34) becomes "Turn Right" (Class 33); "Keep Right" (Class 38) becomes "Keep Left" (Class 39).
+* **Text & Speed Limit Corruption**: Numerals ($20, 30, 50, \dots$) become mirrored, non-existent characters.
 
-### Preprocessing Output
-```python
-def preprocess_image(image: np.ndarray, normalize: bool = True) -> np.ndarray:
-    """
-    Args:
-        image: BGR numpy uint8 image of shape (H, W, 3).
-        normalize: If True, values in [0.0, 1.0] (float32).
-    Returns:
-        numpy ndarray of shape (3, target_h, target_w), default (3, 32, 32).
-    """
-```
+**Permitted Augmentations**:
+* Slight rotation: $\theta \in [-10^\circ, +10^\circ]$
+* Scale variation: $0.90 \times \dots 1.10 \times$
+* Brightness and contrast shifts: $\alpha \in [0.8, 1.2], \beta \in [-20, 20]$
+* Environmental Gaussian blur: $\sigma \in [0.5, 1.2]$
 
-### Dataset Layout in `data/`
-Your preprocessing script or downloader should produce or expect:
-```
+---
+
+## 📁 Dataset Layout Specification
+
+Standardized directory structure expected by the pipeline:
+```text
 data/
-├── Meta.csv
-├── Train.csv
-├── Test.csv
-├── Meta/
-│   ├── 0.png ... 42.png
-├── Train/
-│   ├── 0/ ... 42/
-└── Test/
-    ├── 00000.png ...
+├── Meta.csv             # Official class index, shapes, and category mappings
+├── Train.csv            # Annotations with width, height, and ROI coordinates
+├── Test.csv             # Official test set ground-truth annotations
+├── raw/                 # Ingested original image files
+├── processed/           # Processed and balanced arrays (.npz format)
+│   ├── train.npz
+│   ├── val.npz
+│   ├── test.npz
+│   └── train_balanced.npz
+└── samples/             # Canonical reference image samples (Classes 0-42)
 ```
 
 ---
 
-## 3. Step-by-Step Instructions: How to Swap In Your Own Work
+## 💻 CLI & Execution
 
-1. **Checkout your branch:**
-   ```bash
-   git checkout feature/data-preprocessing
-   ```
+### 1. Run Complete Data Pipeline
+```bash
+python run_pipeline.py --target 500
+```
 
-2. **Add your custom augmentations / filters:**
-   - You can edit `modules/A_data_preprocessing/data_pipeline.py` or create your own script (e.g. `yuvraj_preprocessing.py`).
-   - If you want to introduce **CLAHE** (Contrast Limited Adaptive Histogram Equalization) or **Albumentations**, implement it inside `preprocess_image` or `augment_image`.
+### 2. Standalone Cleaning & ROI Extraction
+```bash
+python -m src.preprocess
+```
 
-3. **Verify contracts with tests:**
-   ```bash
-   python -m pytest modules/A_data_preprocessing/test_module_a.py -v
-   ```
+### 3. Stratified Splitting
+```bash
+python -m src.split_data
+```
 
-4. **Integration with Member C:**
-   Member C trains the PyTorch classifier using `src/train_custom.py` and expects images shaped `(B, 3, 32, 32)` normalized to `[0.0, 1.0]`. If you change the input resolution (e.g., to `(64, 64)`), coordinate with Member C and update `src/schema.py` and `src/classification/model.py`.
+### 4. Data Augmentation & Balancing
+```bash
+python -m src.augment --target 500
+```
 
-5. **Commit and submit:**
-   ```bash
-   git add modules/A_data_preprocessing/
-   git commit -m "feat(data): implement Member A custom preprocessing and augmentation"
-   git push origin feature/data-preprocessing
-   ```
-
----
-
-## 4. Production Engineering Upgrades (Required for Real Pipeline)
-
-GTSRB models often fail on real-world inputs because they lack exposure to environmental degradations and scale variations. When deploying the real production dataset, Member A must implement:
-
-1. **Adverse Weather Augmentation**:
-   - Integrate `Albumentations` to simulate realistic driving degradations.
-   - Implement synthetic rain streaks, night luminance reduction ($\gamma \in [0.35, 0.70]$), and vehicle motion blur (kernel sizes $5 \times 5$ to $13 \times 13$).
-2. **Class Imbalance Correction**:
-   - GTSRB has extreme frequency variance (Class 2 has 2,250 samples; Class 0 has only 210 samples).
-   - Apply SMOTE or random oversampling with geometric jitter to balance minority classes (e.g. 20 km/h, dangerous curve left) to at least 800 training samples.
-3. **Multi-Scale Resolution Bucketing**:
-   - Store and train crops across variable resolutions ($16 \times 16$ up to $128 \times 128$ pixels) to mirror actual dashcam distances and avoid pixelation distortion.
-
+### 5. Generate EDA Reports & Charts
+```bash
+python -m src.eda
+```
+Outputs distribution charts and class galleries to `results/plots/`.

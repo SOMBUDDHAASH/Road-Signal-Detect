@@ -1,55 +1,32 @@
-# Core Source Code Architecture (`src/`)
+# Core Perception Engine Architecture (`src/`)
 
-This directory contains the central integration pipeline, data contracts, and training logic designed by **Member D (Integration Lead)**.
-
----
-
-## 📄 File Index & Detailed Descriptions
-
-### 1. `schema.py`
-* **Purpose**: Defines the universal Pydantic and Dataclass data contracts that all modules must adhere to.
-* **Key Classes**:
-  * `BoundingBox`: Represents sign coordinates `(x1, y1, x2, y2)`. Contains safety methods: `.clamp(max_w, max_h)` to prevent out-of-frame exceptions, `.pad(ratio)` to add context around sign crops, and area/aspect ratio calculations.
-  * `DetectionResult`: Output of the detection stage (`bbox`, `confidence`, `detector_label`, `detector_class_id`).
-  * `ClassificationResult`: Output of the classification stage (`class_id`, `class_name`, `confidence`, `category`, `top_k`).
-  * `PipelineDetection`: Fused object combining a detection, its classification result, and its cropped image array.
-  * `PipelineResult`: Full frame output including annotated BGR frame, list of `PipelineDetection` objects, latency breakdown dictionary (`detect_ms`, `classify_ms`, `track_ms`), FPS, active speed limit, and active warnings.
-  * `SignCategory`: Enum categorizing signs into `PROHIBITORY`, `DANGER`, `MANDATORY`, and `OTHER`.
-* **Interconnections**: Imported by virtually every file (`pipeline.py`, `tracker.py`, `visualizer.py`, `yolo.py`, `model.py`, `app.py`, `api.py`).
+This directory houses the central perception pipeline, universal data contracts, temporal tracking state machine, and model integration adapters.
 
 ---
 
-### 2. `gtsrb_classes.py`
-* **Purpose**: Complete reference dictionary for all 43 classes of the German Traffic Sign Recognition Benchmark (GTSRB).
-* **Key Components**:
-  * `GTSRB_CLASSES`: Dict mapping class IDs `0` through `42` to official German traffic sign names (e.g. `0: "Speed limit (20km/h)"`, `14: "Stop"`, `22: "Bumpy road"`).
-  * `GTSRB_CATEGORIES`: Categorizes each class ID into `SignCategory` for ADAS behavioral filtering.
-  * `CATEGORY_COLORS`: Standardized BGR color palettes for HUD bounding boxes (Red for Prohibitory, Orange for Danger, Blue for Mandatory, Green for Priority/Other).
-  * Helper functions: `get_class_name(cid)`, `get_sign_category(cid)`, `get_category_color(category)`.
-* **Interconnections**: Used by `model.py`, `tracker.py`, `visualizer.py`, `benchmark_loader.py`, and `app.py`.
+## 📄 Subsystem Directory Map
+
+| Directory / Module | Description |
+| :--- | :--- |
+| **`config.py`** | Master system configuration: paths, hardware acceleration, thresholds, and taxonomy mappings. |
+| **`schema.py`** | Universal Pydantic models and dataclasses defining strict data contracts across all perception stages. |
+| **`pipeline.py`** | Master orchestration pipeline connecting detection, cropping, classification, tracking, and HUD rendering. |
+| **`gtsrb_classes.py`** | Complete 43-class GTSRB metadata, category enums, and color coding specifications. |
+| **`data_pipeline/`** | Dataset ingestion, corrupt image cleaning, stratified train/val/test splitting, and orientation-preserving augmentation. |
+| **`detection/`** | YOLOv8 neural detection engine, aspect-ratio clamping, and HSV geometric contour fallback. |
+| **`classification/`** | Keras 3 and PyTorch CNN classification adapters, out-of-distribution filtering, and TT100K consensus engine. |
+| **`tracking/`** | Temporal multi-object tracker, IoU exponential smoothing, and active ADAS speed limit state retention. |
+| **`utils/`** | Cockpit HUD visualizer, CLAHE environmental conditioners, audio alert transducers, and streaming utilities. |
+| **`dataset/`** | Benchmark ground-truth verification and custom dataset loaders. |
 
 ---
 
-### 3. `pipeline.py`
-* **Purpose**: Master orchestrator implementing the 4-stage Computer Vision pipeline:
-  1. **Stage 1 (Detection)**: Passes frame to `self.detector.detect()`.
-  2. **Stage 2 (Cropping & Clamping)**: Pads and extracts candidate image patches safely.
-  3. **Stage 3 (Classification)**: Runs candidate crops through `self.classifier.classify_batch()`.
-  4. **Stage 4 (Temporal Tracking & Telemetry)**: Updates `TemporalSignTracker` across video frames, tracks active speed limits, and renders HUD.
-* **Key Class**: `TrafficSignPipeline` with factory `.create(mode='production' | 'heuristic' | 'mock')`.
-* **Interconnections**: The central bridge connecting Member B's detector, Member C's classifier, Member A's preprocessing, the UI (`app.py`), and the REST API (`api.py`).
+## ⚙️ Data Contract Architecture (`schema.py`)
 
----
+All components communicate through immutable, validated dataclasses:
 
-### 4. `train_custom.py`
-* **Purpose**: PyTorch deep convolutional neural network definition and training engine for custom datasets or retraining on GTSRB.
-* **Key Components**:
-  * `TrafficSignCNN`: 3-block Convolutional Neural Network with BatchNorm, MaxPool2d, Dropout (0.25 and 0.50), and Fully Connected layers.
-  * `train_model(...)`: Automated training loop featuring Adam optimizer, CrossEntropyLoss, validation accuracy evaluation, and TorchScript export (`torch.jit.trace`) for high-speed inference.
-* **Interconnections**: Used by `app.py` for dynamic on-the-fly custom dataset training and by `modules/C_classification/train_classifier.py`.
-
----
-
-### 5. `live_feed.py`
-* **Purpose**: High-throughput OpenCV continuous video loop for standalone deployment on dashcams or robot cars without web browsers.
-* **Interconnections**: Directly instantiates `TrafficSignPipeline` and displays output using standard `cv2.imshow()`.
+* **`BoundingBox`**: Coordinates `(x1, y1, x2, y2)` with `.clamp()`, `.pad()`, and `.iou()` methods.
+* **`DetectionResult`**: Spatial localization output containing bounding box, confidence, and detector source.
+* **`ClassificationResult`**: Fine-grained recognition output containing class ID, name, category, top-k probabilities, and speed limit metadata.
+* **`PipelineDetection`**: Fused object binding localized boxes to classification posteriors and cropped image arrays.
+* **`PipelineResult`**: Final frame result containing annotated visual frames, active speed limits, hazard banners, and latency breakdowns.
