@@ -60,27 +60,46 @@ class TensorFlowClassifier(BaseClassifier):
         self._init_model()
 
     def _init_model(self):
-        """Attempts to load the TensorFlow / Keras model with graceful fallback."""
+        """Attempts to load the Keras / TensorFlow model with graceful fallback."""
+        candidate_paths = [
+            self.model_path,
+            os.path.join("weights", "classification", "traffic_sign_model.keras"),
+            os.path.join("classification", "models", "traffic_sign_model.keras"),
+            os.path.join("models", "traffic_sign_model.keras"),
+        ]
+        resolved_path = None
+        for p in candidate_paths:
+            if p and os.path.exists(p):
+                resolved_path = p
+                self.model_path = p
+                break
+
+        if resolved_path is None:
+            if not self.auto_fallback:
+                raise FileNotFoundError(f"Model file not found in paths: {candidate_paths}")
+            self._init_fallback()
+            return
+
+        # 1. Try Keras 3 with torch backend (standard on Python 3.10-3.14)
+        try:
+            os.environ["KERAS_BACKEND"] = "torch"
+            import keras
+            self._model = keras.models.load_model(resolved_path)
+            self._has_tf = True
+            return
+        except Exception:
+            pass
+
+        # 2. Try TensorFlow if installed
         try:
             import tensorflow as tf
+            self._model = tf.keras.models.load_model(resolved_path)
             self._has_tf = True
-            if os.path.exists(self.model_path):
-                self._model = tf.keras.models.load_model(self.model_path)
-            else:
-                if not self.auto_fallback:
-                    raise FileNotFoundError(f"TensorFlow model not found at '{self.model_path}'.")
-                self._init_fallback()
-        except ImportError:
+            return
+        except Exception:
             self._has_tf = False
             if not self.auto_fallback:
-                raise ImportError(
-                    "TensorFlow is not installed. Run 'pip install tensorflow' "
-                    "to use the TensorFlow/Keras classifier."
-                )
-            self._init_fallback()
-        except Exception as e:
-            if not self.auto_fallback:
-                raise RuntimeError(f"Failed to load Keras model: {e}")
+                raise
             self._init_fallback()
 
     def _init_fallback(self):

@@ -346,24 +346,28 @@ uvicorn api:app --host 0.0.0.0 --port 8000 --reload
 
 ## 🧪 Automated Testing & Verification
 
-Run all **70 automated unit, integration, and regression tests**:
+Run all **68 automated unit, integration, contract, and perception tests**:
 ```powershell
 pytest
 ```
-**Current Test Status**: `70 passed, 16 warnings in 13.10s` ✅
+**Current Test Status**: `68 passed (100% pass rate)` ✅
 
-Run the **11-feature end-to-end perception system verification**:
+Run the **end-to-end data pipeline and perception smoke test**:
 ```powershell
-python scratch/full_system_verification.py
+python run_pipeline.py --skip-download --full
 ```
-**Verification Status**: `ALL 11 CORE FEATURES VERIFIED AND PASSING 100% IN 2.57 SECONDS!` ✅
+**Verification Status**: `All 5 pipeline stages verified and passing 100% with live YOLOv8 + Keras 3 inference` ✅
+
+Run the **Unified Command-Line Interface (CLI)**:
+```powershell
+python cli.py --source image --input data/samples/class_14_sample_1.png
+```
 
 ---
 
-## 📄 Master Technical Documentation PDF
+## 📄 Master Technical Documentation & Architecture
 
-The complete publication-grade technical report can be compiled at any time:
-```powershell
-python generate_master_technical_pdf.py
-```
-Outputs: [`GFG_Traffic_Sign_System_Technical_Documentation.pdf`](GFG_Traffic_Sign_System_Technical_Documentation.pdf) (10 Pages, Numbered).
+Detailed technical architecture and component contracts are documented in:
+- [`ARCHITECTURE.md`](ARCHITECTURE.md): Complete architectural breakdown, data contracts, and pipeline specs.
+- [`GFG_Traffic_Sign_System_Technical_Documentation.pdf`](GFG_Traffic_Sign_System_Technical_Documentation.pdf): Publication-grade 10-page master technical report.
+

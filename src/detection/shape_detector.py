@@ -151,3 +151,81 @@ class RobustTrafficSignDetector(BaseDetector):
                 ))
 
         return verified_detections
+
+
+class ShapeContourDetector:
+    """Color and Contour Based Traffic Sign Detector (Heuristic Fallback)."""
+
+    def __init__(self, min_area: int = 150, max_area: int = 250000):
+        self.min_area = min_area
+        self.max_area = max_area
+
+    def detect(self, image: np.ndarray, conf_threshold: float = 0.3) -> List[DetectionResult]:
+        """Detect signs via HSV color filtering & contour geometry."""
+        if image is None or image.size == 0:
+            return []
+
+        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        h, w = image.shape[:2]
+
+        lower_red1 = np.array([0, 70, 50])
+        upper_red1 = np.array([10, 255, 255])
+        lower_red2 = np.array([170, 70, 50])
+        upper_red2 = np.array([180, 255, 255])
+        mask_red1 = cv2.inRange(hsv, lower_red1, upper_red1)
+        mask_red2 = cv2.inRange(hsv, lower_red2, upper_red2)
+        mask_red = cv2.bitwise_or(mask_red1, mask_red2)
+
+        lower_blue = np.array([100, 80, 50])
+        upper_blue = np.array([135, 255, 255])
+        mask_blue = cv2.inRange(hsv, lower_blue, upper_blue)
+
+        lower_yellow = np.array([15, 80, 80])
+        upper_yellow = np.array([35, 255, 255])
+        mask_yellow = cv2.inRange(hsv, lower_yellow, upper_yellow)
+
+        combined_mask = cv2.bitwise_or(mask_red, mask_blue)
+        combined_mask = cv2.bitwise_or(combined_mask, mask_yellow)
+
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        combined_mask = cv2.morphologyEx(combined_mask, cv2.MORPH_OPEN, kernel)
+        combined_mask = cv2.morphologyEx(combined_mask, cv2.MORPH_CLOSE, kernel)
+
+        contours, _ = cv2.findContours(combined_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        detections = []
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+            if area < self.min_area or area > self.max_area:
+                continue
+
+            x, y, bw, bh = cv2.boundingRect(cnt)
+            aspect_ratio = float(bw) / float(bh)
+
+            if not (0.6 <= aspect_ratio <= 1.6):
+                continue
+
+            rect_area = bw * bh
+            extent = float(area) / rect_area if rect_area > 0 else 0
+            if extent < 0.25:
+                continue
+
+            perimeter = cv2.arcLength(cnt, True)
+            circularity = 4 * np.pi * (area / (perimeter * perimeter)) if perimeter > 0 else 0
+            conf = min(0.95, max(0.40, circularity))
+
+            bbox = BoundingBox(x1=x, y1=y, x2=x + bw, y2=y + bh).clamp(w, h)
+            detections.append(
+                DetectionResult(
+                    bbox=bbox,
+                    confidence=round(conf, 3),
+                    detector_label="Traffic Sign Candidate",
+                    detector_class_id=-1,
+                    class_id=-1,
+                    class_name="Traffic Sign Candidate",
+                    detector_source="Shape/Color Filter",
+                )
+            )
+
+        return detections
+

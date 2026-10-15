@@ -42,12 +42,12 @@ class StandaloneGTSRBClassifier(BaseClassifier):
 
         if model_path:
             self.model_path = Path(model_path)
-        elif module_c_weights.exists():
-            self.model_path = module_c_weights
         elif root_weights.exists():
             self.model_path = root_weights
-        else:
+        elif module_c_weights.exists():
             self.model_path = module_c_weights
+        else:
+            self.model_path = root_weights
 
         self.img_size = img_size
         self.device = device

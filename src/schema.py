@@ -1,13 +1,13 @@
-"""
-Data contracts and schema definitions for the Traffic Sign Detection & Recognition pipeline.
+"""Data contracts and schema definitions for the Traffic Sign Detection & Recognition pipeline.
 Defines explicit function inputs, outputs, bounding box structures, and pipeline results.
 """
 
 from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Tuple, Dict, Any, Optional
+from typing import List, Tuple, Dict, Any, Optional, Union
 import numpy as np
+from pydantic import BaseModel, Field
 
 
 class SignCategory(str, Enum):
@@ -71,16 +71,28 @@ class BoundingBox:
         cy2 = max(0, min(self.y2, max_height))
         return BoundingBox(cx1, cy1, cx2, cy2)
 
-    def pad(self, padding_ratio: float, max_width: int, max_height: int) -> BoundingBox:
-        """Expands the box outward by a fractional margin of width/height."""
-        pad_x = int(self.width * padding_ratio)
-        pad_y = int(self.height * padding_ratio)
+    def pad(self, padding_ratio: Union[float, int] = 0.0, max_width: int = 10000, max_height: int = 10000) -> BoundingBox:
+        """Expands the box outward by a fractional margin or fixed pixel padding."""
+        if isinstance(padding_ratio, float) and padding_ratio < 1.0:
+            pad_x = int(self.width * padding_ratio)
+            pad_y = int(self.height * padding_ratio)
+        else:
+            pad_x = int(padding_ratio)
+            pad_y = int(padding_ratio)
         return BoundingBox(
             max(0, self.x1 - pad_x),
             max(0, self.y1 - pad_y),
             min(max_width, self.x2 + pad_x),
             min(max_height, self.y2 + pad_y)
         )
+
+    def crop(self, image: np.ndarray, padding: Union[float, int] = 0) -> Optional[np.ndarray]:
+        """Crop this region from an image array with optional padding."""
+        h, w = image.shape[:2]
+        box = self.pad(padding, w, h)
+        if box.width <= 0 or box.height <= 0:
+            return None
+        return image[box.y1 : box.y2, box.x1 : box.x2].copy()
 
     def iou(self, other: "BoundingBox") -> float:
         """Compute Intersection over Union (IoU) with another bounding box."""
@@ -100,6 +112,15 @@ class DetectionResult:
     confidence: float
     detector_label: str = "traffic_sign"
     detector_class_id: int = 0
+    class_id: Optional[int] = None
+    class_name: Optional[str] = None
+    detector_source: str = "YOLOv8"
+
+    def __post_init__(self):
+        if self.class_id is None:
+            self.class_id = self.detector_class_id
+        if self.class_name is None:
+            self.class_name = self.detector_label
 
 
 @dataclass
@@ -113,6 +134,7 @@ class ClassificationResult:
     entropy: float = 0.0
     margin: float = 1.0
     is_ambiguous: bool = False
+    speed_limit: Optional[int] = None
 
 
 @dataclass
@@ -137,6 +159,28 @@ class PipelineDetection:
 
 
 @dataclass
+class IntegratedDetection:
+    """Integrated detection item compatible with Member D pipeline."""
+    detection: DetectionResult
+    classification: Optional[ClassificationResult] = None
+    final_class_id: int = 0
+    final_class_name: str = ""
+    final_confidence: float = 0.0
+    track_id: Optional[int] = None
+
+
+@dataclass
+class PipelineFrameResult:
+    """Per-frame result container for video and stream perception."""
+    frame_index: int
+    original_shape: Tuple[int, int, int]
+    detections: List[IntegratedDetection]
+    active_speed_limit: Optional[int] = None
+    inference_time_ms: float = 0.0
+    annotated_frame: Optional[np.ndarray] = None
+
+
+@dataclass
 class PipelineResult:
     """Final output of the end-to-end integration pipeline."""
     original_frame: np.ndarray
@@ -156,3 +200,31 @@ class PipelineResult:
     def num_signs_detected(self) -> int:
         return len(self.detections)
 
+
+# Pydantic schemas for REST API serialization
+class BBoxModel(BaseModel):
+    x1: int
+    y1: int
+    x2: int
+    y2: int
+    width: int
+    height: int
+
+
+class DetectionItemModel(BaseModel):
+    bbox: BBoxModel
+    confidence: float
+    class_id: int
+    class_name: str
+    category: str
+    speed_limit: Optional[int] = None
+
+
+class PipelineResponseModel(BaseModel):
+    status: str
+    image_width: int
+    image_height: int
+    total_detections: int
+    active_speed_limit: Optional[int]
+    inference_time_ms: float
+    detections: List[DetectionItemModel]

@@ -23,8 +23,13 @@ yolov8n.pt
 
 # Output and temporary testing artifacts
 outputs/
+results/*
+!results/.gitkeep
+data/processed/
+*.npz
 *.mp4
 runs/
+scratch/
 .DS_Store
 Thumbs.db
 .idea/

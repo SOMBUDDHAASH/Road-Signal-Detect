@@ -1,58 +1,54 @@
-"""
-Cross-platform Self-Hosted Launcher for Road / Traffic Sign Detection System.
-Provides a simple interactive terminal menu for any new user.
+"""Cross-Platform 1-Click Interactive Menu Launcher.
+Launch with:
+  python start.py
 """
 
 import sys
-import os
 import subprocess
+from pathlib import Path
 
+PROJECT_ROOT = Path(__file__).resolve().parent
 
-def print_banner():
-    print("""
-========================================================================
-     TRAFFIC SIGN DETECTION & RECOGNITION (GTSRB BENCHMARK)
-               Member D Production Integration Pipeline
-========================================================================
-    """)
+def menu():
+    while True:
+        print("\n" + "=" * 65)
+        print("  ROAD TRAFFIC SIGN DETECTION & RECOGNITION SYSTEM")
+        print("  Integrated Multimodal Vision Platform (Member A, B, C, D)")
+        print("=" * 65)
+        print(" [1] Launch Interactive Web Dashboard (Streamlit)")
+        print(" [2] Launch REST API Service (FastAPI / Uvicorn)")
+        print(" [3] Run Automated Test Suite (Pytest)")
+        print(" [4] Process Demo Still Image (CLI)")
+        print(" [5] Process Demo Driving Video (CLI)")
+        print(" [6] Run Full Data Preprocessing Pipeline (Member A)")
+        print(" [7] Exit")
+        print("=" * 65)
 
+        choice = input("Enter choice (1-7): ").strip()
 
-def main():
-    print_banner()
-    print("Select an option to run:")
-    print("  [1] Launch Interactive Web Dashboard (Streamlit UI)")
-    print("  [2] Run Continuous Live Stream (Camera / Video / Dashcam)")
-    print("  [3] Run Automated Test Suite (pytest)")
-    print("  [4] Run REST API Backend (FastAPI)")
-    print("  [5] Generate Synthetic Driving Dashcam Video")
-    print("  [0] Exit")
-    print()
-
-    choice = input("Enter choice [1-5, 0]: ").strip()
-
-    if choice == "1":
-        print("\nStarting Streamlit Dashboard...")
-        subprocess.run([sys.executable, "-m", "streamlit", "run", "app.py"])
-    elif choice == "2":
-        source = input("\nEnter source (0 for webcam, or path to .mp4 video) [default: 0]: ").strip() or "0"
-        mode = input("Enter pipeline mode (heuristic / production) [default: production]: ").strip() or "production"
-        cmd = [sys.executable, "-m", "src.live_feed", "--source", source, "--mode", mode]
-        subprocess.run(cmd)
-    elif choice == "3":
-        print("\nRunning pytest...")
-        subprocess.run([sys.executable, "-m", "pytest", "tests/", "-v"])
-    elif choice == "4":
-        print("\nStarting FastAPI REST service on http://127.0.0.1:8000...")
-        subprocess.run([sys.executable, "-m", "uvicorn", "api:app", "--host", "127.0.0.1", "--port", "8000", "--reload"])
-    elif choice == "5":
-        print("\nGenerating simulated driving video...")
-        subprocess.run([sys.executable, "scripts/generate_driving_simulation.py"])
-    elif choice == "0":
-        print("Goodbye!")
-        sys.exit(0)
-    else:
-        print("Invalid choice.")
-
+        if choice == "1":
+            print("\nLaunching Streamlit Dashboard...")
+            subprocess.run([sys.executable, "-m", "streamlit", "run", str(PROJECT_ROOT / "app.py")])
+        elif choice == "2":
+            print("\nLaunching FastAPI Server at http://127.0.0.1:8000 ...")
+            subprocess.run([sys.executable, "-m", "uvicorn", "api:app", "--host", "127.0.0.1", "--port", "8000", "--reload"])
+        elif choice == "3":
+            print("\nRunning Pytest Suite...")
+            subprocess.run([sys.executable, "-m", "pytest", str(PROJECT_ROOT / "tests"), "-v"])
+        elif choice == "4":
+            print("\nProcessing Demo Still Image...")
+            subprocess.run([sys.executable, str(PROJECT_ROOT / "cli.py"), "--source", "image"])
+        elif choice == "5":
+            print("\nProcessing Demo Video...")
+            subprocess.run([sys.executable, str(PROJECT_ROOT / "cli.py"), "--source", "video"])
+        elif choice == "6":
+            print("\nRunning Data Pipeline...")
+            subprocess.run([sys.executable, str(PROJECT_ROOT / "run_pipeline.py"), "--skip-download", "--full"])
+        elif choice == "7":
+            print("Exiting.")
+            break
+        else:
+            print("Invalid option. Please enter 1 to 7.")
 
 if __name__ == "__main__":
-    main()
+    menu()

@@ -34,12 +34,12 @@ class StandaloneYOLODetector(BaseDetector):
 
         if model_path:
             self.model_path = Path(model_path)
-        elif module_b_weights.exists():
-            self.model_path = module_b_weights
         elif root_weights.exists():
             self.model_path = root_weights
-        else:
+        elif module_b_weights.exists():
             self.model_path = module_b_weights
+        else:
+            self.model_path = root_weights
 
         self.enable_stage2_proposals = enable_stage2_proposals
         self.model = None
