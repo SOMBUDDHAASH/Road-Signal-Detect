@@ -2,6 +2,11 @@ import os
 import sys
 import cv2
 import argparse
+
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+if CURRENT_DIR not in sys.path:
+    sys.path.insert(0, CURRENT_DIR)
+
 from detect_yolo import load_model, detect_image_file, detect_video_file, detect_webcam
 
 

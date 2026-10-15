@@ -26,7 +26,7 @@ from ultralytics import YOLO
 # -----------------------------
 
 BASE_DIR     = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PROJECT_ROOT = os.path.dirname(BASE_DIR)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(BASE_DIR))
 
 # Dataset paths (auto-detect)
 ARCHIVE_DIR  = os.path.join(os.path.dirname(PROJECT_ROOT), "archive_extracted")

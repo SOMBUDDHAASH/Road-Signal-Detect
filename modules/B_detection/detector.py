@@ -29,17 +29,20 @@ class StandaloneYOLODetector(BaseDetector):
 
     def __init__(self, model_path: Optional[str] = None, enable_stage2_proposals: bool = True):
         # Default weight location in Module B or root weights
+        module_b_models = Path(__file__).resolve().parent / "models" / "best.pt"
         module_b_weights = Path(__file__).resolve().parent / "weights" / "best.pt"
         root_weights = ROOT_DIR / "weights" / "detection" / "best.pt"
 
         if model_path:
             self.model_path = Path(model_path)
+        elif module_b_models.exists():
+            self.model_path = module_b_models
         elif root_weights.exists():
             self.model_path = root_weights
         elif module_b_weights.exists():
             self.model_path = module_b_weights
         else:
-            self.model_path = root_weights
+            self.model_path = module_b_models
 
         self.enable_stage2_proposals = enable_stage2_proposals
         self.model = None

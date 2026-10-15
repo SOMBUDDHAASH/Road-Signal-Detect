@@ -27,7 +27,7 @@
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
 │             Subsystem 2: Real-Time Sign Detection Engine               │
-│  - Fine-Tuned YOLOv8n Primary Detector (models/detection/best.pt)      │
+│  - Fine-Tuned YOLOv8n Primary Detector (modules/B_detection/models/)   │
 │  - Dynamic CLAHE Pre-conditioning (L channel adaptive equalization)   │
 │  - Aspect-Preserving Multi-Scale Letterboxing (640x640)                │
 │  - Non-Maximum Suppression (IoU = 0.45, Conf = 0.25)                   │
@@ -37,7 +37,7 @@
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
 │          Subsystem 3: Fine-Grained Deep Neural Classification          │
-│  - 43-Class Convolutional Neural Network (traffic_sign_model.keras)    │
+│  - 43-Class Convolutional Neural Network (modules/C_classification/)   │
 │  - Multi-Backend Interoperability (PyTorch & Keras 3 Runtimes)         │
 │  - Standardized BGR Input Normalization [0, 1] for 32x32x3 Patches     │
 │  - Dual-Domain TT100K 221-Class Cross-Domain Consensus Verification    │

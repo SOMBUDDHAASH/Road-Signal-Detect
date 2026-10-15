@@ -43,7 +43,7 @@ from ultralytics import YOLO
 # -----------------------------
 
 BASE_DIR     = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PROJECT_ROOT = os.path.dirname(BASE_DIR)   # repo root
+PROJECT_ROOT = os.path.dirname(os.path.dirname(BASE_DIR))   # repo root
 
 # ── Dataset from Member A ──────────────────────────────────────────────
 # Default: looks for archive_extracted/ next to the repo root

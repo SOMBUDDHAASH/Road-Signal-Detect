@@ -63,6 +63,7 @@ class TensorFlowClassifier(BaseClassifier):
         """Attempts to load the Keras / TensorFlow model with graceful fallback."""
         candidate_paths = [
             self.model_path,
+            os.path.join("modules", "C_classification", "models", "traffic_sign_model.keras"),
             os.path.join("weights", "classification", "traffic_sign_model.keras"),
             os.path.join("classification", "models", "traffic_sign_model.keras"),
             os.path.join("models", "traffic_sign_model.keras"),

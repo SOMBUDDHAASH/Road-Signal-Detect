@@ -19,7 +19,7 @@ This directory houses the real-time traffic sign localization subsystem, integra
 ### 2. `yolo.py` & `yolo_detector.py`
 * **Purpose**: Production deep-learning adapters executing YOLOv8 inference using Ultralytics.
 * **Key Capabilities**:
-  * **Fine-Tuned Weight Loading**: Loads `weights/detection/best.pt` or `detection/models/best.pt`.
+  * **Fine-Tuned Weight Loading**: Loads `modules/B_detection/models/best.pt` or `weights/detection/best.pt`.
   * **Anti-Person / Anti-Body Class Filtering**: Strict class filters reject non-traffic-sign objects (pedestrians, faces, chairs, laptops), preventing people in front of webcams from generating false positives.
   * **Aspect Ratio & Oversize Guard**: Rejects degenerate boxes ($<12$ px) or abnormal aspect ratios.
 

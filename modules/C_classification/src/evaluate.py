@@ -15,10 +15,10 @@ IMAGE_SIZE = 32
 NUM_CLASSES = 43
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(BASE_DIR))
 
-TEST_CSV = os.path.join(BASE_DIR, "data", "Test.csv")
-
-TEST_FOLDER = os.path.join(BASE_DIR, "data")
+TEST_CSV = os.path.join(PROJECT_ROOT, "data", "Test.csv") if os.path.exists(os.path.join(PROJECT_ROOT, "data", "Test.csv")) else os.path.join(BASE_DIR, "data", "Test.csv")
+TEST_FOLDER = os.path.join(PROJECT_ROOT, "data") if os.path.exists(os.path.join(PROJECT_ROOT, "data")) else os.path.join(BASE_DIR, "data")
 
 MODEL_PATH = os.path.join(
     BASE_DIR,

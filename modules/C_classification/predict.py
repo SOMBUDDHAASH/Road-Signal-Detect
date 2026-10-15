@@ -29,13 +29,16 @@ def get_default_classifier():
     global _GLOBAL_CLASSIFIER
     if _GLOBAL_CLASSIFIER is None:
         # Check if Member C's TensorFlow .keras model is present
-        keras_path = os.path.join(PROJECT_ROOT, "models", "traffic_sign_model.keras")
+        mod_keras_path = os.path.join(PROJECT_ROOT, "modules", "C_classification", "models", "traffic_sign_model.keras")
         alt_keras_path = os.path.join(PROJECT_ROOT, "weights", "classification", "traffic_sign_model.keras")
+        keras_path = os.path.join(PROJECT_ROOT, "models", "traffic_sign_model.keras")
 
-        if os.path.exists(keras_path):
-            _GLOBAL_CLASSIFIER = load_classifier(keras_path, color_mode="bgr")
+        if os.path.exists(mod_keras_path):
+            _GLOBAL_CLASSIFIER = load_classifier(mod_keras_path, color_mode="bgr")
         elif os.path.exists(alt_keras_path):
             _GLOBAL_CLASSIFIER = load_classifier(alt_keras_path, color_mode="bgr")
+        elif os.path.exists(keras_path):
+            _GLOBAL_CLASSIFIER = load_classifier(keras_path, color_mode="bgr")
         else:
             # Fall back to PyTorch classifier
             pt_path = os.path.join(PROJECT_ROOT, "weights", "classification", "classifier.pt")

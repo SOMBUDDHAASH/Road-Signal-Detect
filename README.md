@@ -218,20 +218,20 @@ The system is organized into four decoupled, enterprise-grade engineering subsys
 
 ---
 
-### 2. 🔵 Real-Time Sign Detection Engine (`detection/`, `src/detection/`)
-* **Primary Detector**: Fine-tuned **YOLOv8n** (`detection/models/best.pt`) optimized for low-latency ($12\text{ms}$) real-time inference.
+### 2. 🔵 Real-Time Sign Detection Engine (`modules/B_detection/`, `src/detection/`)
+* **Primary Detector**: Fine-tuned **YOLOv8n** (`modules/B_detection/models/best.pt`) optimized for low-latency ($12\text{ms}$) real-time inference.
 * **Heuristic Fallback Detector**: HSV color-space thresholding (dual red bands, blue, yellow) and contour geometry circularity/triangularity filtering (`ShapeContourDetector`).
 * **Scale Guard & Aspect-Ratio Filtering**: Enforces strict aspect-ratio bounds ($0.75 \le W/H \le 1.33$) and preserves small-object details without sub-cropping internal symbols.
-* **CLI Entry Points**: `python detection/src/detect_yolo.py`, `python cli.py --source video`.
+* **CLI Entry Points**: `python modules/B_detection/src/run_detection.py`, `python cli.py --source video`.
 
 ---
 
-### 3. 🟣 Fine-Grained 43-Class Classification Engine (`classification/`, `src/classification/`)
-* **Neural Architecture**: Deep Convolutional Neural Network (`classification/models/traffic_sign_model.keras`) trained on GTSRB.
+### 3. 🟣 Fine-Grained 43-Class Classification Engine (`modules/C_classification/`, `src/classification/`)
+* **Neural Architecture**: Deep Convolutional Neural Network (`modules/C_classification/models/traffic_sign_model.keras`) trained on GTSRB.
 * **Multi-Framework Interoperability**: Keras 3 with PyTorch and TensorFlow backend support; also supports PyTorch weights (`weights/classification/classifier.pt`).
 * **Color Space Fidelity**: Native BGR channel preservation matching raw OpenCV camera ingestion, ensuring 100.00% confidence on canonical benchmarks.
 * **Out-of-Distribution & Ambiguity Filtering**: Epistemic entropy metrics $H(p) = -\sum p_i \log_2 p_i$ reject ambiguous background patches.
-* **CLI Entry Points**: `python classification/src/predict.py`, `python classification/src/evaluate.py`.
+* **CLI Entry Points**: `python modules/C_classification/src/predict.py`, `python modules/C_classification/src/evaluate.py`.
 
 ---
 

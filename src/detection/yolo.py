@@ -33,7 +33,20 @@ class YOLODetector(BaseDetector):
         self._load_model()
 
     def _load_model(self):
-        if not os.path.exists(self.model_path):
+        candidate_paths = [
+            self.model_path,
+            os.path.join("modules", "B_detection", "models", "best.pt"),
+            os.path.join("weights", "detection", "best.pt"),
+            os.path.join("detection", "models", "best.pt"),
+        ]
+        resolved = None
+        for p in candidate_paths:
+            if p and os.path.exists(p):
+                resolved = p
+                self.model_path = p
+                break
+
+        if resolved is None:
             if self.auto_fallback:
                 from src.detection.shape_detector import RobustTrafficSignDetector
                 self.fallback_detector = RobustTrafficSignDetector()

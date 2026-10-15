@@ -24,13 +24,17 @@ DATA_RAW_DIR = DATA_DIR / "raw" if (DATA_DIR / "raw" / "Train.csv").exists() els
 DATA_PROCESSED_DIR = DATA_DIR / "processed"
 SAMPLES_DIR = DATA_DIR / "samples"
 
-# Model Paths (with robust fallbacks across weights/ and detection/models/)
-YOLO_MODEL_PATH = WEIGHTS_DIR / "detection" / "best.pt"
-if not YOLO_MODEL_PATH.exists() and (PROJECT_ROOT / "detection" / "models" / "best.pt").exists():
+# Model Paths (with robust fallbacks across modules/ and weights/)
+YOLO_MODEL_PATH = PROJECT_ROOT / "modules" / "B_detection" / "models" / "best.pt"
+if not YOLO_MODEL_PATH.exists() and (WEIGHTS_DIR / "detection" / "best.pt").exists():
+    YOLO_MODEL_PATH = WEIGHTS_DIR / "detection" / "best.pt"
+elif not YOLO_MODEL_PATH.exists() and (PROJECT_ROOT / "detection" / "models" / "best.pt").exists():
     YOLO_MODEL_PATH = PROJECT_ROOT / "detection" / "models" / "best.pt"
 
-KERAS_MODEL_PATH = WEIGHTS_DIR / "classification" / "traffic_sign_model.keras"
-if not KERAS_MODEL_PATH.exists() and (PROJECT_ROOT / "classification" / "models" / "traffic_sign_model.keras").exists():
+KERAS_MODEL_PATH = PROJECT_ROOT / "modules" / "C_classification" / "models" / "traffic_sign_model.keras"
+if not KERAS_MODEL_PATH.exists() and (WEIGHTS_DIR / "classification" / "traffic_sign_model.keras").exists():
+    KERAS_MODEL_PATH = WEIGHTS_DIR / "classification" / "traffic_sign_model.keras"
+elif not KERAS_MODEL_PATH.exists() and (PROJECT_ROOT / "classification" / "models" / "traffic_sign_model.keras").exists():
     KERAS_MODEL_PATH = PROJECT_ROOT / "classification" / "models" / "traffic_sign_model.keras"
 
 PYTORCH_MODEL_PATH = WEIGHTS_DIR / "classification" / "classifier.pt"

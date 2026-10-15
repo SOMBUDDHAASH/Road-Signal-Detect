@@ -36,7 +36,7 @@ When presenting, clearly distinguish each team member's specific contribution an
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
 │                    Member B: Sign Detection Engine                     │
-│  - Fine-Tuned YOLOv8n (models/detection/best.pt)                       │
+│  - Fine-Tuned YOLOv8n (modules/B_detection/models/best.pt)             │
 │  - Dynamic CLAHE Pre-conditioning (L channel adaptive equalization)   │
 │  - Multi-Scale Letterboxing (640x640 preserving aspect ratio)          │
 │  - Non-Maximum Suppression (IoU = 0.45, Conf = 0.25)                   │
@@ -46,7 +46,7 @@ When presenting, clearly distinguish each team member's specific contribution an
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
 │                  Member C: Fine-Grained Classification                 │
-│  - 43-Class Convolutional Neural Network (traffic_sign_model.keras)    │
+│  - 43-Class CNN (modules/C_classification/models/traffic_sign_model)   │
 │  - Keras 3 with Torch/TensorFlow Backend Interoperability              │
 │  - Input: 32x32x3 BGR float32 in [0, 1]                                │
 │  - Top-k Confidence Ranking & Category Categorization                  │
@@ -70,9 +70,9 @@ When presenting, clearly distinguish each team member's specific contribution an
 
 | Member | Focus Area | Key Deliverables & Achievements |
 | :--- | :--- | :--- |
-| **Member A** (Yuvraj) | **Data Preprocessing & Augmentation** | • `src/data_pipeline/`: Automated download, corrupt image removal, ROI cropping.<br>• Track-aware stratified train/val/test splitting.<br>• Semantic-preserving data augmentation (brightness, rotation, zoom, blur; strictly NO horizontal flips).<br>• Class balancing & automated EDA charts generation. |
-| **Member B** (Shaurya) | **Real-Time Detection (YOLOv8)** | • Fine-tuned YOLOv8n model (`detection/models/best.pt`).<br>• HSV color-mask and contour geometry fallback detector (`ShapeContourDetector`).<br>• Letterboxing & multi-scale bounding box extraction. |
-| **Member C** (Sneha) | **Fine-Grained Classification (CNN)** | • Trained 43-class CNN model (`classification/models/traffic_sign_model.keras`).<br>• Top-k prediction ranking & category grouping.<br>• 99.34% internal test accuracy, verified at 100% confidence on canonical benchmarks. |
+| **Member A** (Yuvraj) | **Data Preprocessing & Augmentation** | • `modules/A_data_preprocessing/`: Automated download, corrupt image removal, ROI cropping.<br>• Track-aware stratified train/val/test splitting.<br>• Semantic-preserving data augmentation (brightness, rotation, zoom, blur; strictly NO horizontal flips).<br>• Class balancing & automated EDA charts generation. |
+| **Member B** (Shaurya) | **Real-Time Detection (YOLOv8)** | • Fine-tuned YOLOv8n model (`modules/B_detection/models/best.pt`).<br>• Standalone YOLO detector & CLI (`modules/B_detection/src/run_detection.py`).<br>• HSV color-mask and contour geometry fallback detector (`ShapeContourDetector`).<br>• Letterboxing & multi-scale bounding box extraction. |
+| **Member C** (Sneha) | **Fine-Grained Classification (CNN)** | • Trained 43-class CNN model (`modules/C_classification/models/traffic_sign_model.keras`).<br>• Standalone predictor & evaluation (`modules/C_classification/src/predict.py`).<br>• Top-k prediction ranking & category grouping.<br>• 99.34% internal test accuracy, verified at 100% confidence on canonical benchmarks. |
 | **Member D** (Sombuddha) | **Integration, Architecture & Lead** | • Master perception pipeline (`src/integration/pipeline.py` & `src/pipeline.py`).<br>• Temporal tracking with IoU smoothing and speed-limit memory zones.<br>• ADAS Cockpit HUD overlay & trip telemetry logging (CSV/JSON).<br>• Secondary TT100K 221-class cross-domain consensus engine.<br>• Environmental stress pre-conditioning (night/fog dehazing).<br>• Streamlit Web Dashboard (`app.py`), FastAPI REST Service (`api.py`), Unified CLI (`cli.py`), 1-Click Launchers (`start.py`, `run.bat`), and 68 automated unit/integration tests (100% pass rate). |
 
 ---
@@ -184,13 +184,10 @@ GFGgemini/
 ├── pytest.ini              # Pytest configuration
 ├── requirements.txt        # Full project dependencies
 │
-├── classification/         # Member C's official module
-│   ├── models/             # traffic_sign_model.keras (3.88 MB)
-│   └── src/                # train.py, evaluate.py, predict.py
-│
-├── detection/              # Member B's official module
-│   ├── models/             # best.pt YOLOv8 weights (6.25 MB)
-│   └── src/                # detect_yolo.py, train_yolo.py, evaluate_yolo.py
+├── modules/
+│   ├── A_data_preprocessing/  # Member A data pipeline, downloader & tests
+│   ├── B_detection/           # Member B fine-tuned YOLOv8, models, dataset, src & CLI
+│   └── C_classification/      # Member C 43-class CNN, models, results, src & CLI
 │
 ├── src/
 │   ├── config.py           # Master System Configuration (Members A, B, C, D)

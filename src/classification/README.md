@@ -15,7 +15,7 @@ This directory houses the GTSRB sign recognition and classification subsystem, s
 ---
 
 ### 2. `tf_classifier.py` & `keras_classifier.py`
-* **Purpose**: Enterprise Keras 3 classification adapters executing the trained 43-class GTSRB CNN (`classification/models/traffic_sign_model.keras`).
+* **Purpose**: Enterprise Keras 3 classification adapters executing the trained 43-class GTSRB CNN (`modules/C_classification/models/traffic_sign_model.keras` or `weights/classification/`).
 * **Key Capabilities**:
   * Multi-backend acceleration (PyTorch or TensorFlow runtime).
   * Native BGR channel preservation ensuring 100.00% confidence on canonical test signs.

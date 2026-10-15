@@ -1,7 +1,6 @@
 import os
 import cv2
 import numpy as np
-import tensorflow as tf
 
 
 # -----------------------------
@@ -28,11 +27,20 @@ MODEL_PATH = os.path.join(
 # 2. Load trained model
 # -----------------------------
 
-model = tf.keras.models.load_model(
-    MODEL_PATH
-)
+try:
+    os.environ.setdefault("KERAS_BACKEND", "torch")
+    import keras
+    model = keras.models.load_model(MODEL_PATH)
+except Exception:
+    try:
+        import tensorflow as tf
+        model = tf.keras.models.load_model(MODEL_PATH)
+    except Exception as e:
+        print(f"Warning: Could not load model via standard loaders: {e}")
+        model = None
 
-print("Model loaded successfully!")
+if model is not None:
+    print("Model loaded successfully!")
 
 
 # -----------------------------
@@ -86,26 +94,20 @@ def predict_sign(image_path):
 # 4. Test the model
 # -----------------------------
 
-image_path = input(
-    "Enter the path of a traffic sign image: "
-)
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) > 1:
+        image_path = sys.argv[1]
+    else:
+        try:
+            image_path = input("Enter the path of a traffic sign image: ")
+        except (EOFError, KeyboardInterrupt):
+            image_path = "data/samples/class_14_sample_1.png"
 
-result = predict_sign(
-    image_path
-)
+    result = predict_sign(image_path)
 
-if result is not None:
-
-    predicted_class, confidence = result
-
-    print("\nPrediction:")
-    print(
-        "Predicted Class:",
-        predicted_class
-    )
-
-    print(
-        "Confidence:",
-        round(confidence * 100, 2),
-        "%"
-    )
+    if result is not None:
+        predicted_class, confidence = result
+        print("\nPrediction:")
+        print("Predicted Class:", predicted_class)
+        print("Confidence:", round(confidence * 100, 2), "%")
