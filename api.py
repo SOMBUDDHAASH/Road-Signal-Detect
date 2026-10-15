@@ -1,6 +1,10 @@
 """
-FastAPI REST microservice for Traffic Sign Detection & Recognition.
-Maintained by Member D (Integration & Pipeline Lead).
+FastAPI REST Microservice for Road Traffic Sign Detection & Recognition.
+Unified service integrating:
+  - Member A (Data Preprocessing & Augmentation)
+  - Member B (YOLOv8 Detection)
+  - Member C (Keras 3 / PyTorch CNN Classification)
+  - Member D (Master Perception Pipeline, ADAS HUD, Telemetry, and TT100K Consensus)
 """
 
 from typing import List, Dict, Any, Optional
@@ -12,12 +16,14 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from src.pipeline import TrafficSignPipeline
+from src.config import CLASS_NAMES, SPEED_LIMIT_MAP
 
 app = FastAPI(
-    title="Road / Traffic Sign Detection API",
-    description="REST backend for GTSRB Traffic Sign Detection and Recognition with TT100K Secondary Analysis. Maintained by Member D.",
-    version="1.0.0"
+    title="Road Traffic Sign Detection & Recognition API",
+    description="Unified REST microservice for GTSRB 43-Class Perception with TT100K Secondary Analysis. Maintained by Member D.",
+    version="2.0.0"
 )
+
 
 # Pipeline instances cached
 pipelines: Dict[str, TrafficSignPipeline] = {}
@@ -58,9 +64,21 @@ def health_check():
     return {
         "status": "healthy",
         "service": "traffic-sign-pipeline",
+        "version": "2.0.0",
         "available_modes": ["mock", "heuristic", "production"],
         "secondary_models": ["plague_detector", "tt100k_classifier"]
     }
+
+
+@app.get("/classes")
+def list_classes():
+    """Returns official 43 GTSRB classes and speed limit mappings."""
+    return {
+        "total_classes": len(CLASS_NAMES),
+        "classes": CLASS_NAMES,
+        "speed_limits": SPEED_LIMIT_MAP
+    }
+
 
 
 @app.get("/tt100k/classes")

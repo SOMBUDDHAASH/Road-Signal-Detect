@@ -2,17 +2,24 @@
 Streamlit Web Dashboard for Road / Traffic Sign Detection & Recognition.
 Japanese Minimalist Aesthetic (Kanso 簡素, Shibui 渋味, Ma 間).
 
+Integrated Multimodal Vision Platform (v2.0):
+  - Member A (Data Preprocessing, Cleaning, Balancing & Augmentation)
+  - Member B (YOLOv8 Real-Time Detection & Geometric Shape Fallback)
+  - Member C (43-Class Keras 3 / PyTorch CNN Fine-Grained Classification)
+  - Member D (Master Pipeline Orchestration, Temporal Tracking, ADAS HUD, TT100K Consensus)
+
 Features:
   1. Test Against Established Samples (GTSRB Benchmark - All 43 Classes)
   2. Test Against Still Images (File Upload)
   3. Continuous Real-Time Video Testing via Camera / Webcam (Zero False Body Detections)
   4. Continuous Video Testing via Screenshare (High-Speed Screen Capture via mss)
   5. Test Against YouTube Video Links (via yt-dlp)
-  - Live Local Timestamped Event Stream (e.g. 03/10/2026 16:20:05 -> Stop sign detected)
-  - Hot-Swappable YOLO & PyTorch Classifier Models
-  - Custom Dataset Uploader & On-the-Fly PyTorch Trainer
+  - Live Local Timestamped Event Stream (e.g. Stop sign detected)
+  - Hot-Swappable YOLOv8, PyTorch, & Keras 3 Models
+  - Custom Dataset Uploader & On-the-Fly Model Adaptation
 Maintained by Member D (Integration & Pipeline Lead).
 """
+
 
 from typing import List, Dict, Optional, Tuple
 import os

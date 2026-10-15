@@ -1,7 +1,9 @@
-# Multi-stage Dockerfile for Self-Hosted Traffic Sign Detection & Recognition System
+# Container for Autonomous Road Traffic Sign Detection & Recognition System (GTSRB & TT100K)
+# Integrates Member A, B, C, D Modules • Streamlit UI & FastAPI REST Microservice
 FROM python:3.11-slim
 
 WORKDIR /app
+
 
 # Install system dependencies for OpenCV and video handling
 RUN apt-get update && apt-get install -y --no-install-recommends \

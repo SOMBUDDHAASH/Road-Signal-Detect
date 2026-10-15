@@ -1,19 +1,20 @@
 # Team Integration Guide: Road Traffic Sign Detection & Recognition
 
 **Prepared by**: Sombuddha Ash (Member D — Integration & Pipeline Lead)  
-**Primary Dataset**: GTSRB (43 Classes)  
-**Branch**: `feature/integration`
+**Primary Dataset**: GTSRB (43 Classes) + Secondary TT100K (221 Classes)  
+**Status**: Fully Integrated, Verified, and Production-Ready on branch `main`  
 
 ---
 
-## 1. Team Responsibilities & Branches
+## 1. Team Responsibilities & Integrated Modules
 
-| Member | Role | Branch | Key Deliverable |
+| Member | Role | Integrated Module | Key Deliverable |
 | :--- | :--- | :--- | :--- |
-| **Member A (Yuvraj Singh)** | Data & Preprocessing | `feature/data-preprocessing` | Cleaned data, train/val/test splits, augmentations |
-| **Member B (Shaurya Vaid)** | Detection Lead | `feature/detection` | `detect()` function + YOLO weights (`weights/detection/best.pt`) |
-| **Member C (Sneha Chakraborty)** | Classification Lead | `feature/classification` | `classify()` function + CNN weights (`weights/classification/classifier.pt`) |
-| **Member D (Sombuddha Ash)** | Integration Lead | `feature/integration` | Master pipeline, Web Dashboard (`app.py`), API (`api.py`), contracts & tests |
+| **Member A (Yuvraj Singh)** | Data Preprocessing & Augmentation | `src/data_pipeline/`, `src/download_data.py`, `src/preprocess.py` | Cleaned data, stratified train/val/test splits, orientation-preserving augmentations |
+| **Member B (Shaurya Vaid)** | Detection Lead | `detection/`, `src/detection/`, `weights/detection/best.pt` | Fine-tuned YOLOv8n detector, letterboxing, HSV shape contour fallback |
+| **Member C (Sneha Chakraborty)** | Classification Lead | `classification/`, `classification/models/traffic_sign_model.keras` | 43-Class CNN model, Keras 3 with PyTorch backend, 99.34% test accuracy |
+| **Member D (Sombuddha Ash)** | Systems Integration & Lead | `src/integration/`, `cli.py`, `run_pipeline.py`, `app.py`, `api.py` | Master perception pipeline, temporal tracking, ADAS HUD, 68 tests (100% pass) |
+
 
 ---
 
