@@ -15,6 +15,108 @@ An enterprise-grade, real-time Computer Vision and Deep Learning perception plat
 
 ---
 
+## 🧑‍⚖️ Fast Deployment & Evaluation Guide for Judges
+
+> [!IMPORTANT]
+> **Zero-Friction Evaluation**: All neural weights (`weights/` and `modules/*/models/`), benchmark annotations, 43-class sample test images, and simulated driving videos are pre-packaged within this repository. **No external Kaggle downloads, third-party API keys, or GPU hardware are required** to evaluate all platform capabilities.
+
+### ⚡ 3 Ways to Deploy and Evaluate
+
+#### Track 1: One-Command Docker Compose (Fastest & Fully Isolated)
+*Prerequisite: Docker & Docker Compose installed.*
+```bash
+# Clone the repository
+git clone https://github.com/SOMBUDDHAASH/Road-Signal-Detect.git
+cd Road-Signal-Detect
+
+# Launch both Streamlit Web UI and FastAPI Microservice
+docker compose up --build -d
+```
+* 🌐 **Interactive Web Dashboard**: Open [http://localhost:8501](http://localhost:8501)
+* 📡 **FastAPI REST API Docs (Swagger UI)**: Open [http://localhost:8000/docs](http://localhost:8000/docs)
+* 🩺 **Health Check Endpoint**: Open [http://localhost:8000/health](http://localhost:8000/health)
+* 🛑 **Stop Containers**: `docker compose down`
+
+---
+
+#### Track 2: 1-Click Interactive Launcher (Windows & Cross-Platform)
+* **Windows**: Double-click `run.bat` or execute in PowerShell:
+  ```powershell
+  .\run.bat
+  ```
+* **macOS / Linux / Windows**:
+  ```bash
+  python start.py
+  ```
+*An interactive terminal launcher presents 7 numbered options: launch Streamlit, launch FastAPI, execute the pytest suite, process a demo image, process a demo video, or run the complete data pipeline.*
+
+---
+
+#### Track 3: Standard Python Virtual Environment (Local Installation)
+*Recommended Python: 3.10 – 3.14*
+
+```bash
+# 1. Clone repository
+git clone https://github.com/SOMBUDDHAASH/Road-Signal-Detect.git
+cd Road-Signal-Detect
+
+# 2. Create and activate a clean virtual environment
+python -m venv venv
+# On Windows:
+.\venv\Scripts\activate
+# On macOS / Linux:
+source venv/bin/activate
+
+# 3. Install dependencies
+pip install --upgrade pip
+pip install -r requirements.txt
+
+# 4. Launch the Streamlit Web Application
+streamlit run app.py
+```
+*(Optionally launch the FastAPI microservice in another terminal: `uvicorn api:app --host 0.0.0.0 --port 8000`)*
+
+---
+
+### ⏱️ 30-Second Verification: Automated Test Suite
+
+Before manually exploring the UI, judges can verify system integrity and algorithmic correctness across the entire codebase by running:
+
+```bash
+pytest -v
+```
+* **Result**: **68 passed in ~12 seconds (100% pass rate)**.
+* **Test Scope**: Data contracts, coordinate clamping, YOLOv8 letterboxing, Keras 3 / PyTorch parity, TT100K Bayesian consensus logic, CLAHE dehazing, and FastAPI endpoints.
+
+---
+
+### 🗺️ Judges' 5-Minute Guided Evaluation Tour
+
+Once the web application is running at **`http://localhost:8501`**, follow this quick walkthrough to inspect each major capability:
+
+1. **Option 1: GTSRB Benchmark Explorer (All 43 Classes)**
+   * Select **"Option 1"** in the top navigation.
+   * Pick any class from the dropdown (e.g. Class 14: Stop, Class 1: 30 km/h, Class 40: Roundabout).
+   * Notice the ground-truth metadata, reference icon, and instant neural classification (**100.0% confidence** on canonical benchmarks, **97.27%** on the full 51,882-image archive).
+2. **Option 2: Still Image Localization & Classification**
+   * Select **"Option 2"** in the top navigation.
+   * Drag and drop any image from `data/samples/` (e.g. `data/samples/class_14_sample_1.png` or `data/samples/class_02_sample_1.png`).
+   * Observe the YOLO bounding box proposal, sub-15ms inference latency, and ADAS category pill overlay.
+3. **Option 5 / Option 4: Continuous Video & ADAS HUD**
+   * Select **"Option 5"** (or use Option 4 for real-time laptop screen detection).
+   * Load the bundled driving simulation video at `data/samples/simulated_driving.mp4`.
+   * Watch the real-time **temporal tracking (`SignTracker`)**, **active speed limit memory zone**, and HUD dynamic corner brackets.
+4. **Sidebar Innovation Toggles**:
+   * **TT100K 221-Class Consensus**: Toggle ON in the left sidebar to activate dual-domain Bayesian consensus between European (GTSRB) and International (TT100K) sign topologies.
+   * **Adverse Weather & Night Dehazing**: Toggle ON the Environmental Pre-Conditioner to see dynamic CLAHE luminance expansion and atmospheric dehazing.
+   * **Audio / Voice Alerts**: Toggle ON acoustic voice transducers for real-time spoken alerts (*"Stop sign ahead"*).
+5. **REST API & Telemetry Verification**:
+   * Visit `http://localhost:8000/docs` to test `/predict` and `/health` directly via the interactive Swagger UI.
+   * In the Streamlit UI, view the real-time timecode event log and test the one-click **Export to CSV / JSON** buttons.
+* For enterprise cloud architectures (Render, Railway, Cloud Run, AWS ECS, Nginx + Systemd), refer to [**`DEPLOYMENT.md`**](DEPLOYMENT.md).
+
+---
+
 
 ## 🌟 Key Capabilities & Testing Options
 
