@@ -807,6 +807,27 @@ def main():
                 if "tt100k_ms" in result.latency_ms:
                     m_cols2[3].metric("TT100K Latency", f"{result.latency_ms['tt100k_ms']:.1f} ms")
 
+                # Detailed Detection Breakdown Card
+                if result.detections:
+                    st.markdown("---")
+                    st.markdown("##### 🔍 Recognized Traffic Signs")
+                    for s_idx, d in enumerate(result.detections):
+                        card_c1, card_c2, card_c3 = st.columns([1, 1.5, 3])
+                        with card_c1:
+                            if d.crop is not None and d.crop.size > 0:
+                                st.image(cv2.cvtColor(d.crop, cv2.COLOR_BGR2RGB), caption=f"Extracted ROI #{s_idx+1}", width=120)
+                            else:
+                                st.caption("Crop unavailable")
+                        with card_c2:
+                            meta_p = os.path.join("data", "meta", f"{d.classification.class_id}.png")
+                            if os.path.exists(meta_p):
+                                st.image(meta_p, caption=f"Class [{d.classification.class_id}] Meta Icon", width=90)
+                        with card_c3:
+                            st.markdown(f"**Identified Sign**: `[{d.classification.class_id}] {d.classification.class_name}`")
+                            st.markdown(f"**Confidence**: **{d.classification.confidence * 100:.1f}%** • {get_badge_html(d.classification.category)}", unsafe_allow_html=True)
+                            det_src = getattr(d.detection, "detector_source", "YOLOv8")
+                            st.caption(f"Detector Source: `{det_src}` • Bounding Box: `{d.detection.bbox}`")
+
                 # TT100K Secondary Consensus Card for Still Images
                 if toggle_tt100k and result.detections:
                     for d_idx, d in enumerate(result.detections):
@@ -847,6 +868,7 @@ def main():
             cam_idx = st.number_input("Camera Device Index", min_value=0, max_value=5, value=0)
         with col_c2:
             target_reticle = st.checkbox("🎯 Center Sign Focus Mode (Hold phone or printed sign to camera)", value=True)
+            suppress_bg = st.checkbox("🛡️ Indoor Anti-Clutter Filter (Suppress bedroom/office background)", value=True)
 
         run_cam = st.toggle("▶️ Start Live Camera Stream", value=False)
 
@@ -863,6 +885,9 @@ def main():
                 m_cls = m_cols[3].empty()
                 m_fps = m_cols[4].empty()
 
+                from src.classification.semantic_verifier import get_semantic_verifier
+                verifier = get_semantic_verifier()
+
                 while run_cam and cap.isOpened():
                     ret, frame = cap.read()
                     if not ret or frame is None:
@@ -870,8 +895,14 @@ def main():
 
                     h, w = frame.shape[:2]
 
-                    # Process raw frame through pipeline first
-                    result = pipeline.process_frame(frame, conf_threshold=conf_thresh)
+                    # Process frame through pipeline
+                    if suppress_bg:
+                        # Indoor focus mode: bypass full-room background scanning to eliminate room false positives
+                        result = pipeline.process_frame(frame, conf_threshold=conf_thresh, is_video=True)
+                        result.detections = []
+                        result.annotated_frame = frame.copy()
+                    else:
+                        result = pipeline.process_frame(frame, conf_threshold=conf_thresh, is_video=True)
 
                     # If Center Reticle is enabled, evaluate center target box safely
                     if target_reticle:
@@ -890,23 +921,26 @@ def main():
                         skin_ratio = cv2.countNonZero(skin_mask) / float(center_crop.shape[0] * center_crop.shape[1])
 
                         is_sign = False
-                        if sat >= 45.0 and skin_ratio < 0.22:
+                        if sat >= 35.0 and skin_ratio < 0.25:
                             cls_res = pipeline.classifier.classify(center_crop)
-                            if cls_res.class_id >= 0 and cls_res.confidence >= max(0.70, conf_thresh):
+                            verified_res = verifier.verify_and_correct(center_crop, cls_res.class_id, cls_res.confidence) if verifier else cls_res
+                            
+                            if verified_res and verified_res.class_id >= 0 and verified_res.confidence >= max(0.65, conf_thresh):
                                 is_sign = True
                                 reticle_color = (0, 255, 0)
-                                cv2.rectangle(result.annotated_frame, (cx1, cy1), (cx2, cy2), reticle_color, 2, cv2.LINE_AA)
+                                cv2.rectangle(result.annotated_frame, (cx1, cy1), (cx2, cy2), reticle_color, 3, cv2.LINE_AA)
                                 cv2.putText(
                                     result.annotated_frame,
-                                    f"HOLD: {cls_res.class_name} ({cls_res.confidence*100:.0f}%)",
+                                    f"HOLD: {verified_res.class_name} ({verified_res.confidence*100:.0f}%)",
                                     (cx1 + 10, cy1 - 10),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, reticle_color, 2, cv2.LINE_AA
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, reticle_color, 2, cv2.LINE_AA
                                 )
                                 p_det = PipelineDetection(
-                                    detection=DetectionResult(bbox=BoundingBox(cx1, cy1, cx2, cy2), confidence=cls_res.confidence, detector_label="traffic_sign"),
-                                    classification=cls_res,
+                                    detection=DetectionResult(bbox=BoundingBox(cx1, cy1, cx2, cy2), confidence=verified_res.confidence, detector_label="traffic_sign"),
+                                    classification=verified_res,
                                     crop=center_crop
                                 )
+                                result.detections.append(p_det)
                                 logger.log_detections([p_det])
 
                         if not is_sign:

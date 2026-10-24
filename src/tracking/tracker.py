@@ -218,8 +218,9 @@ class TemporalSignTracker:
         """Convert confirmed tracks back to PipelineDetection list."""
         active_items: List[PipelineDetection] = []
         for tid, trk in self.tracks.items():
-            # Only display if track has persisted at least min_hits or is fresh
-            if trk.hits >= self.min_hits_to_confirm or trk.disappeared_count == 0:
+            # Only display confirmed tracks that have persisted across frames,
+            # or high-confidence primary detector findings (detection_conf >= 0.85)
+            if trk.hits >= self.min_hits_to_confirm or trk.detection_conf >= 0.85:
                 active_items.append(PipelineDetection(
                     detection=DetectionResult(
                         bbox=trk.bbox,

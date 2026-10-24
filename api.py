@@ -60,6 +60,7 @@ class DetectionResponse(BaseModel):
     class_id: int
     class_name: str
     category: str
+    detector_source: str = "YOLOv8"
     tt100k: Optional[TT100KResponse] = None
 
 
@@ -138,6 +139,7 @@ async def predict_image(
             class_id=item.classification.class_id,
             class_name=item.classification.class_name,
             category=item.classification.category.value,
+            detector_source=getattr(item.detection, "detector_source", "YOLOv8"),
             tt100k=tt_resp
         ))
 

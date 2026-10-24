@@ -154,9 +154,9 @@ class RobustTrafficSignDetector(BaseDetector):
 
 
 class ShapeContourDetector:
-    """Color and Contour Based Traffic Sign Detector (Heuristic Fallback)."""
+    """Color and Contour Based Traffic Sign Detector (Heuristic Fallback for Member D Pipeline)."""
 
-    def __init__(self, min_area: int = 150, max_area: int = 250000):
+    def __init__(self, min_area: int = 150, max_area: int = None):
         self.min_area = min_area
         self.max_area = max_area
 
@@ -165,23 +165,27 @@ class ShapeContourDetector:
         if image is None or image.size == 0:
             return []
 
-        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
         h, w = image.shape[:2]
+        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        max_allowed_area = self.max_area if self.max_area is not None else int(h * w * 0.98)
 
-        lower_red1 = np.array([0, 70, 50])
-        upper_red1 = np.array([10, 255, 255])
-        lower_red2 = np.array([170, 70, 50])
+        # Red mask (two ranges to wrap around 180 in HSV)
+        lower_red1 = np.array([0, 50, 40])
+        upper_red1 = np.array([12, 255, 255])
+        lower_red2 = np.array([168, 50, 40])
         upper_red2 = np.array([180, 255, 255])
         mask_red1 = cv2.inRange(hsv, lower_red1, upper_red1)
         mask_red2 = cv2.inRange(hsv, lower_red2, upper_red2)
         mask_red = cv2.bitwise_or(mask_red1, mask_red2)
 
-        lower_blue = np.array([100, 80, 50])
-        upper_blue = np.array([135, 255, 255])
+        # Blue mask (mandatory signs, keep right/left, ahead only)
+        lower_blue = np.array([90, 50, 40])
+        upper_blue = np.array([140, 255, 255])
         mask_blue = cv2.inRange(hsv, lower_blue, upper_blue)
 
-        lower_yellow = np.array([15, 80, 80])
-        upper_yellow = np.array([35, 255, 255])
+        # Yellow mask (priority signs, warning diamonds)
+        lower_yellow = np.array([12, 60, 60])
+        upper_yellow = np.array([38, 255, 255])
         mask_yellow = cv2.inRange(hsv, lower_yellow, upper_yellow)
 
         combined_mask = cv2.bitwise_or(mask_red, mask_blue)
@@ -191,23 +195,27 @@ class ShapeContourDetector:
         combined_mask = cv2.morphologyEx(combined_mask, cv2.MORPH_OPEN, kernel)
         combined_mask = cv2.morphologyEx(combined_mask, cv2.MORPH_CLOSE, kernel)
 
-        contours, _ = cv2.findContours(combined_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        # Retrieve both external and internal contours to capture nested sign discs inside rectangular plaques
+        contours, _ = cv2.findContours(combined_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
-        detections = []
+        detections: List[DetectionResult] = []
+        seen_boxes: List[BoundingBox] = []
+
         for cnt in contours:
             area = cv2.contourArea(cnt)
-            if area < self.min_area or area > self.max_area:
+            if area < self.min_area or area > max_allowed_area:
                 continue
 
             x, y, bw, bh = cv2.boundingRect(cnt)
             aspect_ratio = float(bw) / float(bh)
 
-            if not (0.6 <= aspect_ratio <= 1.6):
+            # Accept square-ish to moderately rectangular sign components
+            if not (0.55 <= aspect_ratio <= 1.80):
                 continue
 
             rect_area = bw * bh
             extent = float(area) / rect_area if rect_area > 0 else 0
-            if extent < 0.25:
+            if extent < 0.20:
                 continue
 
             perimeter = cv2.arcLength(cnt, True)
@@ -215,17 +223,27 @@ class ShapeContourDetector:
             conf = min(0.95, max(0.40, circularity))
 
             bbox = BoundingBox(x1=x, y1=y, x2=x + bw, y2=y + bh).clamp(w, h)
-            detections.append(
-                DetectionResult(
-                    bbox=bbox,
-                    confidence=round(conf, 3),
-                    detector_label="Traffic Sign Candidate",
-                    detector_class_id=-1,
-                    class_id=-1,
-                    class_name="Traffic Sign Candidate",
-                    detector_source="Shape/Color Filter",
+
+            # Duplicate suppression via IoU
+            is_dup = False
+            for sb in seen_boxes:
+                if bbox.iou(sb) > 0.40:
+                    is_dup = True
+                    break
+
+            if not is_dup:
+                seen_boxes.append(bbox)
+                detections.append(
+                    DetectionResult(
+                        bbox=bbox,
+                        confidence=round(conf, 3),
+                        detector_label="Traffic Sign Candidate",
+                        detector_class_id=-1,
+                        class_id=-1,
+                        class_name="Traffic Sign Candidate",
+                        detector_source="Shape/Color Filter",
+                    )
                 )
-            )
 
         return detections
 

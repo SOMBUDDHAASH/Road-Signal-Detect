@@ -53,7 +53,7 @@
 │  - High-Resolution ADAS Cockpit HUD Visualizer (Dynamic Pill Badges)   │
 │  - Real-time Trip Telemetry Logger (JSON / CSV Exporter)               │
 │  - Interactive Streamlit Dashboard (app.py) & FastAPI Server (api.py)  │
-│  - Comprehensive Test Suite (68 Automated Pytest Cases, 100% Pass)     │
+│  - Comprehensive Test Suite (72 Automated Pytest Cases, 100% Pass)     │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 

@@ -34,4 +34,7 @@ scratch/
 .DS_Store
 Thumbs.db
 .idea/
-.vscode/
+# PyInstaller build artifacts
+build/
+dist/
+*.spec

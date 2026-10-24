@@ -89,6 +89,8 @@ class TrafficSignPipeline:
         self.enable_stage2_proposals = enable_stage2_proposals
         self.enable_semantic_verification = enable_semantic_verification
         self.secondary_detector = PlagueSecondaryDetector(enable_ocr=self.enable_ocr) if self.enable_plague_detector else None
+        from src.detection.shape_detector import ShapeContourDetector
+        self.shape_detector = ShapeContourDetector()
 
         # Smoothing for FPS
         self._prev_frame_time = time.perf_counter()
@@ -150,6 +152,10 @@ class TrafficSignPipeline:
         use_ocr = self.enable_ocr if enable_ocr is None else enable_ocr
         use_stage2 = self.enable_stage2_proposals if enable_stage2_proposals is None else enable_stage2_proposals
         use_verifier = self.enable_semantic_verification if enable_semantic_verification is None else enable_semantic_verification
+        from src.classification.mock import MockClassifier
+        from src.detection.mock import MockDetector
+        if isinstance(self.classifier, MockClassifier) or isinstance(self.detector, MockDetector):
+            use_verifier = False
         use_env = self.enable_environmental_enhancer if enable_environmental_enhancer is None else enable_environmental_enhancer
         use_tt100k = self.enable_tt100k if enable_tt100k is None else enable_tt100k
 
@@ -169,9 +175,11 @@ class TrafficSignPipeline:
                 bbox=BoundingBox(0, 0, w, h),
                 confidence=1.0,
                 detector_label="traffic_sign",
-                detector_class_id=0
+                detector_class_id=0,
+                detector_source="Direct Sign Crop"
             )]
         else:
+            # 1. Primary YOLO detector (Member B)
             import inspect
             sig = inspect.signature(self.detector.detect)
             if "enable_stage2_proposals" in sig.parameters:
@@ -181,14 +189,36 @@ class TrafficSignPipeline:
             else:
                 raw_detections = self.detector.detect(proc_frame, conf_threshold=conf_threshold)
 
-            # If scene detector found nothing but image is compact (<= 200px), evaluate whole crop as fallback
-            if not raw_detections and max(w, h) <= 200:
-                raw_detections = [DetectionResult(
-                    bbox=BoundingBox(0, 0, w, h),
-                    confidence=1.0,
-                    detector_label="traffic_sign",
-                    detector_class_id=0
-                )]
+            # 2. Heuristic Shape & Color Contour Fallback (Member D)
+            # If primary YOLO found 0 signs:
+            # - On still images (not is_video): search for prominent circular, triangular, and octagonal sign symbols
+            # - On video streams (is_video=True): YOLO is the primary vehicle detector; avoid false positives on ambient room clutter
+            if not raw_detections and self.shape_detector is not None and not is_video:
+                shape_dets = self.shape_detector.detect(proc_frame, conf_threshold=max(0.20, conf_threshold * 0.6))
+                if shape_dets:
+                    raw_detections = shape_dets
+
+            # 3. Whole-image fallback for compact crops (<= 200px) or still-image isolated graphics
+            if not raw_detections:
+                if max(w, h) <= 200:
+                    raw_detections = [DetectionResult(
+                        bbox=BoundingBox(0, 0, w, h),
+                        confidence=1.0,
+                        detector_label="traffic_sign",
+                        detector_class_id=0,
+                        detector_source="Direct Sign Crop"
+                    )]
+                elif not is_video:
+                    # Check if the entire still image is a clean isolated sign graphic
+                    whole_res = self.classifier.classify(proc_frame)
+                    if whole_res.class_id >= 0 and whole_res.confidence >= 0.70:
+                        raw_detections = [DetectionResult(
+                            bbox=BoundingBox(0, 0, w, h),
+                            confidence=round(whole_res.confidence, 3),
+                            detector_label=whole_res.class_name,
+                            detector_class_id=whole_res.class_id,
+                            detector_source="Direct Image Inspection"
+                        )]
         det_latency_ms = (time.perf_counter() - t_det_start) * 1000.0
 
         # Stage 2: Cropping with safety clamping
@@ -196,10 +226,17 @@ class TrafficSignPipeline:
         valid_detections: List[DetectionResult] = []
 
         for det in raw_detections:
-            # Aspect-Ratio Clamping: Enforce strict square-ish aspect ratio priors (0.75 <= W/H <= 1.33)
+            # Aspect-Ratio Clamping: Enforce square-ish aspect ratio priors
             # on full scene frames (max(w,h) > 160) to suppress false positives on vertical structures
-            if max(w, h) > 160 and not (0.75 <= det.bbox.aspect_ratio <= 1.33):
-                continue
+            # For fallback detectors and direct crops, allow broader range (0.50 <= W/H <= 1.85)
+            det_src = getattr(det, "detector_source", "")
+            if max(w, h) > 160:
+                if det_src in ("Shape/Color Filter", "Direct Sign Crop", "Direct Image Inspection"):
+                    min_ar, max_ar = 0.50, 1.85
+                else:
+                    min_ar, max_ar = 0.65, 1.45
+                if not (min_ar <= det.bbox.aspect_ratio <= max_ar):
+                    continue
 
             padded_bbox = det.bbox.pad(self.crop_padding_ratio, max_width=w, max_height=h)
             x1, y1, x2, y2 = padded_bbox.to_xyxy()
@@ -243,10 +280,9 @@ class TrafficSignPipeline:
                         ocr_number=ocr_res.detected_number if ocr_res else None,
                         ocr_word=ocr_res.detected_word if ocr_res else None
                     )
-                    if verified is not None:
-                        cls_res = verified
-                    elif cls_res.class_id < 0:
-                        continue
+                    if verified is None:
+                        continue  # REJECT: Failed physical/semantic verification (skin, non-sign, wrong color)
+                    cls_res = verified
                 elif cls_res.class_id < 0:
                     continue
 

@@ -34,7 +34,7 @@ class PlagueSecondaryDetector:
     def __init__(
         self,
         min_sign_size: int = 18,
-        max_sign_ratio: float = 0.70,
+        max_sign_ratio: float = 0.95,
         enable_ocr: bool = True
     ):
         self.min_sign_size = min_sign_size

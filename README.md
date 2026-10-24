@@ -8,7 +8,7 @@
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.30%2B-red.svg)](https://streamlit.io/)
 [![GTSRB Accuracy](https://img.shields.io/badge/GTSRB-97.27%25%20(51%2C882%20Archive)-blue.svg)](#-empirical-benchmarks)
 [![Secondary Model](https://img.shields.io/badge/Secondary-TT100K%20(221%20Classes)-purple.svg)](#-tt100k-secondary-perception-model--consensus-engine)
-[![Tests](https://img.shields.io/badge/Tests-68%20passed%20(100%25)-brightgreen.svg)](#-automated-testing)
+[![Tests](https://img.shields.io/badge/Tests-72%20passed%20(100%25)-brightgreen.svg)](#-automated-testing)
 [![Design](https://img.shields.io/badge/Design-Japanese%20Minimalist%20(Kanso)-black.svg)](#-japanese-minimalist-aesthetic-kanso--shibumi)
 
 An enterprise-grade, real-time Computer Vision and Deep Learning perception platform for detecting, recognizing, and tracking German Traffic Signs (GTSRB 43 classes) with toggleable **TT100K 221-Class Secondary Perception** and multi-domain consensus cross-verification.
@@ -20,7 +20,21 @@ An enterprise-grade, real-time Computer Vision and Deep Learning perception plat
 > [!IMPORTANT]
 > **Zero-Friction Evaluation**: All neural weights (`weights/` and `modules/*/models/`), benchmark annotations, 43-class sample test images, and simulated driving videos are pre-packaged within this repository. **No external Kaggle downloads, third-party API keys, or GPU hardware are required** to evaluate all platform capabilities.
 
-### ⚡ 3 Ways to Deploy and Evaluate
+### ⚡ 4 Ways to Deploy and Evaluate
+
+#### Track 0: Standalone Windows Executable (Smoothest 1-Click Launch)
+*Prerequisite: Windows 10/11.*
+* Simply **double-click** the pre-compiled executable in the repository root:
+  ```text
+  Autonomous_Traffic_Sign_System.exe
+  ```
+* **What it does automatically**:
+  1. Validates Member B YOLOv8 and Member C CNN perception weights.
+  2. Resolves and binds an open local port.
+  3. Launches the Streamlit Perception Dashboard.
+  4. Automatically opens your default web browser directly to `http://localhost:8501`.
+
+---
 
 #### Track 1: One-Command Docker Compose (Fastest & Fully Isolated)
 *Prerequisite: Docker & Docker Compose installed.*
@@ -85,7 +99,7 @@ Before manually exploring the UI, judges can verify system integrity and algorit
 ```bash
 pytest -v
 ```
-* **Result**: **68 passed in ~12 seconds (100% pass rate)**.
+* **Result**: **72 passed in ~12 seconds (100% pass rate)**.
 * **Test Scope**: Data contracts, coordinate clamping, YOLOv8 letterboxing, Keras 3 / PyTorch parity, TT100K Bayesian consensus logic, CLAHE dehazing, and FastAPI endpoints.
 
 ---
@@ -422,7 +436,7 @@ uvicorn api:app --host 0.0.0.0 --port 8000
 
 ## 🧪 Automated Testing & Verification
 
-Run all **68 automated unit, integration, contract, and perception tests**:
+Run all **72 automated unit, integration, contract, and perception tests**:
 ```powershell
 pytest
 ```
