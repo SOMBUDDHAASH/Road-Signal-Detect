@@ -28,6 +28,7 @@ results/*
 data/processed/
 *.npz
 *.mp4
+!data/samples/simulated_driving.mp4
 runs/
 scratch/
 .DS_Store

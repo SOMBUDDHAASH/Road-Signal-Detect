@@ -13,6 +13,7 @@ import cv2
 import numpy as np
 from fastapi import FastAPI, UploadFile, File, Query, HTTPException
 from fastapi.responses import Response
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from src.pipeline import TrafficSignPipeline
@@ -20,8 +21,17 @@ from src.config import CLASS_NAMES, SPEED_LIMIT_MAP
 
 app = FastAPI(
     title="Road Traffic Sign Detection & Recognition API",
-    description="Unified REST microservice for GTSRB 43-Class Perception with TT100K Secondary Analysis. Maintained by Member D.",
+    description="Unified REST microservice for GTSRB 43-Class Perception with TT100K Secondary Analysis.",
     version="2.0.0"
+)
+
+# Enable CORS for cross-origin web client and dashboard access
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -239,5 +249,9 @@ async def websocket_telemetry(websocket: WebSocket):
 
 
 if __name__ == "__main__":
+    import os
     import uvicorn
-    uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=True)
+    host = os.environ.get("HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", "8000"))
+    reload = os.environ.get("RELOAD", "false").lower() in ("true", "1")
+    uvicorn.run("api:app", host=host, port=port, reload=reload)

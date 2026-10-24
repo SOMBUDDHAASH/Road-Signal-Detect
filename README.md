@@ -295,6 +295,15 @@ Double-click `run.bat` or run in PowerShell:
 python start.py
 ```
 
+### Docker & Docker Compose (Production Containers)
+Deploy both the Streamlit Dashboard and FastAPI Microservice simultaneously:
+```bash
+docker compose up --build -d
+```
+* **Interactive UI**: `http://localhost:8501`
+* **FastAPI Microservice**: `http://localhost:8000/docs`
+* Full container and cloud setup instructions: [**`DEPLOYMENT.md`**](DEPLOYMENT.md).
+
 ### Manual Launch
 ```powershell
 # 1. Install dependencies
@@ -304,7 +313,7 @@ pip install -r requirements.txt
 streamlit run app.py
 
 # 3. Launch FastAPI REST Service (Optional)
-uvicorn api:app --host 0.0.0.0 --port 8000 --reload
+uvicorn api:app --host 0.0.0.0 --port 8000
 ```
 
 ---

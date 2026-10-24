@@ -1,28 +1,41 @@
-# Container for Autonomous Road Traffic Sign Detection & Recognition System (GTSRB & TT100K)
-# Integrates Member A, B, C, D Modules • Streamlit UI & FastAPI REST Microservice
+# Multi-Stage Production Container for Autonomous Road Traffic Sign Detection & Recognition
 FROM python:3.11-slim
 
 WORKDIR /app
 
+# Environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    KERAS_BACKEND=torch \
+    STREAMLIT_SERVER_HEADLESS=true \
+    STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
 
-# Install system dependencies for OpenCV and video handling
+# Install minimal OS dependencies for OpenCV, FFmpeg video decoding, and health checks
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libgl1 \
     libglib2.0-0 \
     ffmpeg \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install
+# Install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir torch torchvision yt-dlp mss
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
-# Copy repository files
+# Copy application codebase
 COPY . .
 
-# Expose ports for Streamlit and FastAPI
+# Ensure entrypoint script has execution permissions
+RUN chmod +x entrypoint.sh
+
+# Expose ports for Streamlit (8501) and FastAPI (8000)
 EXPOSE 8501 8000
 
-# Default entrypoint starts Streamlit dashboard
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+# Container healthcheck (checks whichever port is active)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-8501}/_stcore/health || curl -f http://localhost:${PORT:-8000}/health || exit 1
+
+# Production entrypoint
+ENTRYPOINT ["/bin/bash", "entrypoint.sh"]

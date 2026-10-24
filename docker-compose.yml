@@ -1,0 +1,40 @@
+services:
+  # Interactive Streamlit Web Application
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: traffic_sign_web
+    restart: unless-stopped
+    environment:
+      - SERVICE=streamlit
+      - PORT=8501
+      - KERAS_BACKEND=torch
+    ports:
+      - "8501:8501"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8501/_stcore/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # FastAPI Production REST Microservice
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: traffic_sign_api
+    restart: unless-stopped
+    environment:
+      - SERVICE=api
+      - PORT=8000
+      - KERAS_BACKEND=torch
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
