@@ -3,7 +3,7 @@ Advanced visualizer and HUD renderer for traffic sign detections.
 Renders stylized bounding boxes, category-colored badges, and real-time telemetry overlays.
 """
 
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional, Any
 import cv2
 import numpy as np
 

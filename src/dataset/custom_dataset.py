@@ -4,7 +4,7 @@ Supports uploading custom dataset ZIPs (folder-per-class), extracting, validatin
 and generating dynamic class mappings for custom regional traffic signs.
 """
 
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Any
 import os
 import zipfile
 import json
